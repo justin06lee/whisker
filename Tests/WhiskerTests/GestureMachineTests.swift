@@ -55,3 +55,33 @@ private let p = CGPoint(x: 100, y: 100)
     let out = m.handle(.buttonUp(.right, at: p, time: 0.4))
     #expect(out == [.hideRadial])
 }
+
+@Test func scrollInCommandModeSwitchesApp() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))
+    let down = m.handle(.scrolled(deltaY: -3, time: 0.2))
+    let up   = m.handle(.scrolled(deltaY: 5, time: 0.3))
+    #expect(down == [.switchAppStep(forward: true)])
+    #expect(up == [.switchAppStep(forward: false)])
+}
+
+@Test func quickLeftClickInCommandModeIsCommandClick() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))
+    let q = CGPoint(x: 200, y: 200)
+    _ = m.handle(.buttonDown(.left, at: q, time: 0.2))
+    let out = m.handle(.buttonUp(.left, at: q, time: 0.25)) // < 0.150 held
+    #expect(out == [.commandClick(at: q)])
+}
+
+@Test func heldLeftClickInCommandModeIsShiftClick() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))
+    let q = CGPoint(x: 200, y: 200)
+    _ = m.handle(.buttonDown(.left, at: q, time: 0.2))
+    let out = m.handle(.buttonUp(.left, at: q, time: 0.40)) // 0.20 held >= 0.150
+    #expect(out == [.shiftClick(at: q)])
+}

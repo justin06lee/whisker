@@ -8,6 +8,7 @@ struct GestureMachine {
         case awaitingSecondRight(at: CGPoint, since: Double)   // first quick tap done; watching for a second
         case secondRightPending(originAt: CGPoint)             // second right is down, not yet released
         case secondaryRadial(originAt: CGPoint)                // Radial 2 visible
+        case commandModeLeftDown(originAt: CGPoint, leftDownAt: CGPoint, leftDownTime: Double)
     }
 
     private let settings: Settings
@@ -36,6 +37,26 @@ struct GestureMachine {
         case (.commandMode, .buttonUp(.right, _, _)):
             state = .idle
             return [.hideRadial]
+
+        case let (.commandMode, .scrolled(deltaY, _)):
+            return [.switchAppStep(forward: deltaY < 0)]
+
+        case let (.commandMode(origin), .buttonDown(.left, point, time)):
+            state = .commandModeLeftDown(originAt: origin, leftDownAt: point, leftDownTime: time)
+            return []
+
+        case let (.commandModeLeftDown(origin, point, leftDownTime), .buttonUp(.left, _, time)):
+            state = .commandMode(originAt: origin)
+            return time - leftDownTime >= settings.leftClickHoldThreshold
+                ? [.shiftClick(at: point)]
+                : [.commandClick(at: point)]
+
+        case let (.commandModeLeftDown(_, _, _), .buttonUp(.right, _, _)):
+            state = .idle
+            return [.hideRadial]
+
+        case let (.commandModeLeftDown, .scrolled(deltaY, _)):
+            return [.switchAppStep(forward: deltaY < 0)]
 
         // second right-click begins within the double-click window
         case let (.awaitingSecondRight(point, since), .buttonDown(.right, _, time))
