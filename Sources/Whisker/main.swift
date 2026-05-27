@@ -9,13 +9,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var textButtons: TextButtonsController?
     private var axPollTimer: Timer?
     private var lastSelectedText: String = ""
-    private var autoCopyOnHighlight = Settings.defaults.autoCopyOnHighlight
+    private var autoCopyOnHighlight = Settings.current.autoCopyOnHighlight
+    private var autoCopyItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "🐱"
 
         let menu = NSMenu()
+        let copyItem = NSMenuItem(title: "Auto-copy on highlight",
+                                  action: #selector(toggleAutoCopy), keyEquivalent: "")
+        copyItem.state = autoCopyOnHighlight ? .on : .off
+        menu.addItem(copyItem)
+        self.autoCopyItem = copyItem
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Whisker", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
 
@@ -105,6 +112,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    @MainActor @objc private func toggleAutoCopy() {
+        autoCopyOnHighlight.toggle()
+        var s = Settings.current
+        s.autoCopyOnHighlight = autoCopyOnHighlight
+        s.save()
+        autoCopyItem?.state = autoCopyOnHighlight ? .on : .off
     }
 
     @MainActor @objc private func quit() { NSApp.terminate(nil) }
