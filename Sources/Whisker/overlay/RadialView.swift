@@ -75,3 +75,52 @@ struct RadialMenu {
         return buttons[index]
     }
 }
+
+// MARK: - AppKit renderer
+//
+// `@MainActor` is required here: `NSView` and its drawing surface are
+// main-actor-isolated under Swift 6 strict concurrency, so the subclass and its
+// `onSelect` stored property must share that isolation. The pure `RadialMenu`
+// above stays non-isolated (it is used by the test target off the main actor).
+
+import AppKit
+
+@MainActor
+final class RadialNSView: NSView {
+    // Named `radialMenu` (not `menu`) to avoid colliding with the inherited
+    // `NSResponder.menu` (`NSMenu?`) property, which a plain `menu` would
+    // illegally try to override.
+    private let radialMenu: RadialMenu
+    var onSelect: ((RadialButton) -> Void)?
+
+    init(menu: RadialMenu) {
+        self.radialMenu = menu
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let buttons = radialMenu.buttons
+        let n = buttons.count
+        for (i, button) in buttons.enumerated() {
+            let angle = 2 * Double.pi * Double(i) / Double(n)
+            let cx = radialMenu.center.x + cos(angle) * radialMenu.radius
+            let cy = radialMenu.center.y + sin(angle) * radialMenu.radius
+            let rect = NSRect(x: cx - 26, y: cy - 26, width: 52, height: 52)
+            NSColor(white: 0.1, alpha: 0.85).setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            ]
+            let s = NSAttributedString(string: button.label, attributes: attrs)
+            let size = s.size()
+            s.draw(at: NSPoint(x: cx - size.width/2, y: cy - size.height/2))
+        }
+    }
+
+    /// Called by the controller with a window-local point.
+    func selectButton(at point: CGPoint) {
+        if let b = radialMenu.button(at: point) { onSelect?(b) }
+    }
+}
