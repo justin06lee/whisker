@@ -94,6 +94,11 @@ Mostly dropped (volume/brightness/lock/spotlight all have native clickable paths
 
 ---
 
+## Radial selection model
+
+- **Radial 1** (held open while right-click is down) → **release-to-select (pie menu)**: move toward a button, release right-click to fire the sector under the cursor. The right-release event carries the cursor point, so no separate cursor tracking is needed. Releasing in the centre dead zone fires nothing. Left-click while right is held remains ⌘/⇧-click multi-select — no conflict.
+- **Radial 2** (opened by double-right-click; nothing held afterward) → **click-to-select**: left-click a button to fire it; left-click outside a button (or right/middle-click) dismisses it.
+
 ## Master gesture vocabulary (v1)
 
 | Gesture | Action |
