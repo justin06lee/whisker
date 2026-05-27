@@ -96,3 +96,43 @@ private let p = CGPoint(x: 100, y: 100)
     #expect(mid == [.updateScreenshotRegion(to: b)])
     #expect(end == [.commitScreenshotRegion(to: c)])
 }
+
+@Test func secondaryRadialDismissesOnRightClick() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.buttonUp(.right, at: p, time: 0.04))
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.10))
+    _ = m.handle(.buttonUp(.right, at: p, time: 0.14)) // Radial 2 up
+    let out = m.handle(.buttonDown(.right, at: p, time: 0.5))
+    #expect(out == [.hideRadial])
+}
+
+@Test func screenshotDragCancelsOnOtherButton() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.middle, at: p, time: 0.0))
+    let out = m.handle(.buttonDown(.left, at: p, time: 0.1))
+    #expect(out == [.cancelScreenshotRegion])
+    // and a fresh middle-drag still works afterward (not wedged)
+    let again = m.handle(.buttonDown(.middle, at: p, time: 0.2))
+    #expect(again == [.beginScreenshotRegion(at: p)])
+}
+
+@Test func secondRightOutsideWindowDoesNotOpenRadial2() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.buttonUp(.right, at: p, time: 0.04))
+    _ = m.handle(.tick(time: 0.40))                     // window expired -> pass-through, back to idle
+    // a later right-down now starts a fresh single-tap cycle, NOT a double
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.50))
+    let out = m.handle(.buttonUp(.right, at: p, time: 0.54))
+    #expect(out == [])                                  // deferred again as a new first tap
+}
+
+@Test func scrollWhileLeftDownInCommandModeStillSwitchesApp() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))
+    _ = m.handle(.buttonDown(.left, at: p, time: 0.2)) // commandModeLeftDown
+    let out = m.handle(.scrolled(deltaY: -2, time: 0.25))
+    #expect(out == [.switchAppStep(forward: true)])
+}

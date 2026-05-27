@@ -8,6 +8,9 @@ enum GestureEvent: Equatable {
     case buttonUp(MouseButton, at: CGPoint, time: Double)
     case dragged(to: CGPoint, time: Double)
     case scrolled(deltaY: Double, time: Double)
-    /// Synthetic tick so the machine can fire hold-thresholds without a new input event.
+    /// Synthetic clock tick. The machine relies on ticks to fire time-based transitions
+    /// that have no triggering input: the hold-threshold (tap→command mode) AND the
+    /// deferred right-click pass-through after the double-click window expires.
+    /// The OS-glue layer MUST pump ticks continuously, or these transitions never fire.
     case tick(time: Double)
 }

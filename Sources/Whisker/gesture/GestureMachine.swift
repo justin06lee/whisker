@@ -52,7 +52,7 @@ struct GestureMachine {
                 ? [.shiftClick(at: point)]
                 : [.commandClick(at: point)]
 
-        case let (.commandModeLeftDown(_, _, _), .buttonUp(.right, _, _)):
+        case (.commandModeLeftDown, .buttonUp(.right, _, _)):
             state = .idle
             return [.hideRadial]
 
@@ -66,6 +66,7 @@ struct GestureMachine {
             return []
 
         // second right-click completes -> show Radial 2
+        // Radial 2 anchors at the first tap's location (second click's point is intentionally ignored).
         case let (.secondRightPending(point), .buttonUp(.right, _, _)):
             state = .secondaryRadial(originAt: point)
             return [.showRadial(.secondary, at: point)]
@@ -75,7 +76,7 @@ struct GestureMachine {
             state = .idle
             return [.passThroughRightClick]
 
-        case (.secondaryRadial, .buttonDown(.left, _, _)):
+        case (.secondaryRadial, .buttonDown):
             state = .idle
             return [.hideRadial]
 
@@ -89,6 +90,11 @@ struct GestureMachine {
         case let (.screenshotDragging, .buttonUp(.middle, point, _)):
             state = .idle
             return [.commitScreenshotRegion(to: point)]
+
+        // any other button press aborts an in-progress region capture
+        case (.screenshotDragging, .buttonDown):
+            state = .idle
+            return [.cancelScreenshotRegion]
 
         default:
             return []
