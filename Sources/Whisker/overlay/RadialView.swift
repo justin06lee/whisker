@@ -8,6 +8,7 @@ struct KeyCombo: Equatable {
     static let `return` = KeyCombo(keyCode: 0x24, command: false, shift: false)
     static let escape   = KeyCombo(keyCode: 0x35, command: false, shift: false)
     static let tab      = KeyCombo(keyCode: 0x30, command: false, shift: false)
+    static let delete   = KeyCombo(keyCode: 0x33, command: false, shift: false)   // forward Delete/Backspace
     static func cmd(_ letter: Character) -> KeyCombo {
         KeyCombo(keyCode: Self.keyCode(for: letter), command: true, shift: false)
     }
@@ -20,6 +21,9 @@ struct KeyCombo: Equatable {
         case "t": return 0x11
         case "n": return 0x2D
         case "w": return 0x0D
+        case "x": return 0x07
+        case "c": return 0x08
+        case "v": return 0x09
         default:  return 0x00
         }
     }
