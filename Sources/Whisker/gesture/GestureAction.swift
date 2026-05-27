@@ -6,6 +6,7 @@ enum GestureAction: Equatable {
     case passThroughRightClick          // let the native context menu happen
     case showRadial(RadialKind, at: CGPoint)
     case hideRadial
+    case selectRadial(at: CGPoint)      // hit-test the radial at this point, fire the hit button, then hide
     case switchAppStep(forward: Bool)   // scroll while right held -> ⌘Tab step
     case commandClick(at: CGPoint)      // ⌘-click (multi-select)
     case shiftClick(at: CGPoint)        // ⇧-click (range select)

@@ -35,9 +35,9 @@ struct GestureMachine {
             state = .idle
             return []
 
-        case (.commandMode, .buttonUp(.right, _, _)):
+        case let (.commandMode, .buttonUp(.right, point, _)):
             state = .idle
-            return [.hideRadial]
+            return [.selectRadial(at: point)]
 
         case let (.commandMode, .scrolled(deltaY, _)):
             return [.switchAppStep(forward: deltaY < 0)]
@@ -76,6 +76,12 @@ struct GestureMachine {
             state = .idle
             return [.passThroughRightClick]
 
+        // Radial 2: left-click selects the button at the click point
+        case let (.secondaryRadial, .buttonDown(.left, point, _)):
+            state = .idle
+            return [.selectRadial(at: point)]
+
+        // Radial 2: any other button (right/middle) dismisses
         case (.secondaryRadial, .buttonDown):
             state = .idle
             return [.hideRadial]

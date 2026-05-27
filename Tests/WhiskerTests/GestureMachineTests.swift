@@ -31,14 +31,15 @@ private let p = CGPoint(x: 100, y: 100)
     #expect(out == [.passThroughRightClick])
 }
 
-@Test func secondaryRadialHidesOnNextLeftClick() {
+@Test func secondaryRadialSelectsOnLeftClick() {
     var m = GestureMachine(settings: .defaults)
+    let q = CGPoint(x: 250, y: 250)
     _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
     _ = m.handle(.buttonUp(.right, at: p, time: 0.04))
     _ = m.handle(.buttonDown(.right, at: p, time: 0.10))
-    _ = m.handle(.buttonUp(.right, at: p, time: 0.14)) // radial 2 up
-    let out = m.handle(.buttonDown(.left, at: p, time: 0.5))
-    #expect(out == [.hideRadial])
+    _ = m.handle(.buttonUp(.right, at: p, time: 0.14)) // Radial 2 up
+    let out = m.handle(.buttonDown(.left, at: q, time: 0.5))
+    #expect(out == [.selectRadial(at: q)])
 }
 
 @Test func heldRightShowsPrimaryRadial() {
@@ -48,12 +49,13 @@ private let p = CGPoint(x: 100, y: 100)
     #expect(out == [.showRadial(.primary, at: p)])
 }
 
-@Test func releasingAfterHoldHidesRadial() {
+@Test func releasingAfterHoldSelectsRadialAtReleasePoint() {
     var m = GestureMachine(settings: .defaults)
+    let q = CGPoint(x: 300, y: 120)
     _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
-    _ = m.handle(.tick(time: 0.151))
-    let out = m.handle(.buttonUp(.right, at: p, time: 0.4))
-    #expect(out == [.hideRadial])
+    _ = m.handle(.tick(time: 0.151))                       // commandMode, radial shown at p
+    let out = m.handle(.buttonUp(.right, at: q, time: 0.4)) // released elsewhere
+    #expect(out == [.selectRadial(at: q)])
 }
 
 @Test func scrollInCommandModeSwitchesApp() {
