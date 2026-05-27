@@ -117,6 +117,6 @@ Mostly dropped (volume/brightness/lock/spotlight all have native clickable paths
 **Dropped:** ⌘T/N/L/O as shortcuts (Radial 2 keeps T/N/W only), refresh, window tiling, volume/brightness/lock/spotlight.
 
 ## Open questions
-1. **Technical spike:** how to intercept mouse events globally + draw radials over every app on macOS. Path: `CGEventTap` for capture/synthesis, transparent always-on-top overlay window (NSPanel) for radials, Accessibility API (AXUIElement) to read focused-element/selection state. Must confirm event-tap can suppress/reshape native right-click and that Wispr Flow + Whisker event taps don't conflict.
+1. **Technical spike:** how to intercept mouse events globally + draw radials over every app on macOS. Path: `CGEventTap` for capture/synthesis, transparent always-on-top overlay window (NSPanel) for radials, Accessibility API (AXUIElement) to read focused-element/selection state. Must confirm event-tap can suppress/reshape native right-click. Wispr Flow is bound to mouse button 5 — Whisker only uses left/right/middle/scroll, so no input conflict by design.
 
 Resolved: auto-copy default ON (toggleable); v1 target = macOS.
