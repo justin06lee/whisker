@@ -130,6 +130,15 @@ private let p = CGPoint(x: 100, y: 100)
     #expect(out == [])                                  // deferred again as a new first tap
 }
 
+@Test func interceptsLeftClicksOnlyInRadialOrCommandStates() {
+    var m = GestureMachine(settings: .defaults)
+    #expect(m.isInterceptingLeftClicks == false)            // idle
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    #expect(m.isInterceptingLeftClicks == false)            // rightPending
+    _ = m.handle(.tick(time: 0.151))
+    #expect(m.isInterceptingLeftClicks == true)             // commandMode
+}
+
 @Test func scrollWhileLeftDownInCommandModeStillSwitchesApp() {
     var m = GestureMachine(settings: .defaults)
     _ = m.handle(.buttonDown(.right, at: p, time: 0.0))

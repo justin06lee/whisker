@@ -3,6 +3,8 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var eventTap: EventTap?
+    private var overlay: OverlayController?
+    private var screenshot: ScreenshotController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -25,10 +27,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        eventTap = EventTap(settings: .defaults) { actions in
-            for action in actions { print("ACTION:", action) }
+        let overlay = OverlayController()
+        let screenshot = ScreenshotController()
+        self.overlay = overlay
+        self.screenshot = screenshot
+
+        let tap = EventTap(settings: .defaults) { [weak self] actions in
+            guard self != nil else { return }
+            for action in actions {
+                switch action {
+                case .passThroughRightClick:
+                    break
+                case let .showRadial(kind, at: point):
+                    overlay.showRadial(kind, atGlobalPoint: point)
+                case .hideRadial:
+                    overlay.hide()
+                case let .selectRadial(at: point):
+                    overlay.selectAndHide(atGlobalPoint: point)
+                case let .switchAppStep(forward):
+                    InputSynth.switchApp(forward: forward)
+                case let .commandClick(at: point):
+                    InputSynth.modifiedClick(at: point, command: true, shift: false)
+                case let .shiftClick(at: point):
+                    InputSynth.modifiedClick(at: point, command: false, shift: true)
+                case .beginScreenshotRegion, .updateScreenshotRegion,
+                     .commitScreenshotRegion, .cancelScreenshotRegion:
+                    screenshot.handle(action)
+                }
+            }
         }
-        eventTap?.start()
+        self.eventTap = tap
+        tap.start()
     }
 
     @MainActor @objc private func quit() { NSApp.terminate(nil) }

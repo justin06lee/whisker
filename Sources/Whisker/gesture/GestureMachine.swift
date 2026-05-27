@@ -17,6 +17,15 @@ struct GestureMachine {
 
     init(settings: Settings) { self.settings = settings }
 
+    /// True when a left-click should be consumed by Whisker (radial selection / multi-select)
+    /// rather than passed to the app underneath.
+    var isInterceptingLeftClicks: Bool {
+        switch state {
+        case .commandMode, .commandModeLeftDown, .secondaryRadial: return true
+        default: return false
+        }
+    }
+
     mutating func handle(_ event: GestureEvent) -> [GestureAction] {
         switch (state, event) {
         case let (.idle, .buttonDown(.right, point, time)):

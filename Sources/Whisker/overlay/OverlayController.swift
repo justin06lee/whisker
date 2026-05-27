@@ -49,6 +49,12 @@ final class OverlayController {
         view.selectButton(at: local)
     }
 
+    /// Hit-test at the given global point; fire the button if one is hit; then always hide.
+    func selectAndHide(atGlobalPoint global: CGPoint) {
+        handleClick(atGlobalPoint: global)  // fires onSelect (which posts the combo) if a button was hit
+        hide()                              // always hide, even on a dead-zone miss
+    }
+
     func hide() {
         panel?.orderOut(nil)
         panel = nil

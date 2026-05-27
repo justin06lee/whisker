@@ -90,16 +90,29 @@ final class EventTap {
 
     /// Called by the C callback. Returns true if the event should be suppressed.
     func process(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        // Ignore our own synthetic events (tagged by InputSynth) so they never
+        // re-enter the machine or get suppressed — prevents feedback loops.
+        if event.getIntegerValueField(.eventSourceUserData) == InputSynth.syntheticMarker {
+            return false
+        }
         let now = ProcessInfo.processInfo.systemUptime
         let loc = event.location
         guard let gesture = Self.translate(type, at: loc, event: event, time: now) else { return false }
+
+        // Capture the intercept flag BEFORE `handle` mutates state: the state when
+        // the event ARRIVES decides ownership. A left-down in commandMode returns an
+        // empty action list yet must still be suppressed.
+        let wasInterceptingLeft = machine.isInterceptingLeftClicks
         let actions = machine.handle(gesture)
         if !actions.isEmpty { onActions(actions) }
+
         switch gesture {
         case .buttonDown(.right, _, _), .buttonUp(.right, _, _):
             return !actions.contains(.passThroughRightClick)
         case .buttonDown(.middle, _, _), .buttonUp(.middle, _, _):
             return true
+        case .buttonDown(.left, _, _), .buttonUp(.left, _, _):
+            return wasInterceptingLeft || !actions.isEmpty
         default:
             return false
         }

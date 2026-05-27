@@ -7,6 +7,9 @@
 @preconcurrency import CoreGraphics
 
 enum InputSynth {
+    /// Marker stamped on every synthetic event so our own event tap ignores them (prevents feedback loops).
+    static let syntheticMarker: Int64 = 0x5748_4B52 // "WHKR"
+
     static func post(_ combo: KeyCombo) {
         let src = CGEventSource(stateID: .combinedSessionState)
         var flags: CGEventFlags = []
@@ -16,6 +19,8 @@ enum InputSynth {
         let up = CGEvent(keyboardEventSource: src, virtualKey: combo.keyCode, keyDown: false)
         down?.flags = flags
         up?.flags = flags
+        down?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
+        up?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
         down?.post(tap: .cgSessionEventTap)
         up?.post(tap: .cgSessionEventTap)
     }
@@ -29,6 +34,8 @@ enum InputSynth {
         let up = CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
         down?.flags = flags
         up?.flags = flags
+        down?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
+        up?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
         down?.post(tap: .cgSessionEventTap)
         up?.post(tap: .cgSessionEventTap)
     }
