@@ -9,6 +9,7 @@ struct GestureMachine {
         case secondRightPending(originAt: CGPoint)             // second right is down, not yet released
         case secondaryRadial(originAt: CGPoint)                // Radial 2 visible
         case commandModeLeftDown(originAt: CGPoint, leftDownAt: CGPoint, leftDownTime: Double)
+        case screenshotDragging
     }
 
     private let settings: Settings
@@ -77,6 +78,17 @@ struct GestureMachine {
         case (.secondaryRadial, .buttonDown(.left, _, _)):
             state = .idle
             return [.hideRadial]
+
+        case let (.idle, .buttonDown(.middle, point, _)):
+            state = .screenshotDragging
+            return [.beginScreenshotRegion(at: point)]
+
+        case let (.screenshotDragging, .dragged(point, _)):
+            return [.updateScreenshotRegion(to: point)]
+
+        case let (.screenshotDragging, .buttonUp(.middle, point, _)):
+            state = .idle
+            return [.commitScreenshotRegion(to: point)]
 
         default:
             return []

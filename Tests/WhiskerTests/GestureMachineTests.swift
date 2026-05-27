@@ -85,3 +85,14 @@ private let p = CGPoint(x: 100, y: 100)
     let out = m.handle(.buttonUp(.left, at: q, time: 0.40)) // 0.20 held >= 0.150
     #expect(out == [.shiftClick(at: q)])
 }
+
+@Test func middleDragRunsScreenshotRegion() {
+    var m = GestureMachine(settings: .defaults)
+    let a = CGPoint(x: 10, y: 10), b = CGPoint(x: 50, y: 60), c = CGPoint(x: 120, y: 140)
+    let begin = m.handle(.buttonDown(.middle, at: a, time: 0.0))
+    let mid   = m.handle(.dragged(to: b, time: 0.1))
+    let end   = m.handle(.buttonUp(.middle, at: c, time: 0.2))
+    #expect(begin == [.beginScreenshotRegion(at: a)])
+    #expect(mid == [.updateScreenshotRegion(to: b)])
+    #expect(end == [.commitScreenshotRegion(to: c)])
+}
