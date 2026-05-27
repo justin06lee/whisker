@@ -2,6 +2,7 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
+    private var eventTap: EventTap?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -23,6 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+
+        eventTap = EventTap(settings: .defaults) { actions in
+            for action in actions { print("ACTION:", action) }
+        }
+        eventTap?.start()
     }
 
     @MainActor @objc private func quit() { NSApp.terminate(nil) }
