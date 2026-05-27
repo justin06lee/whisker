@@ -2,7 +2,7 @@
 
 Mouse-only computer control, used alongside Wispr Flow (which handles raw text dictation). Goal: do everything keyboard does *except typing* without touching the keyboard.
 
-**Target:** Cross-platform (build core on one OS first, abstract later).
+**Target:** macOS for v1 (build on Accessibility API + CGEventTap). Cross-platform abstraction deferred to later.
 
 ## Keyboard capability ranking (highest → lowest impact)
 
@@ -39,7 +39,7 @@ Impact = frequency of use × pain when lost. Wispr already covers raw text entry
 - Triple click → select line.
 - Click-drag → free highlight.
 
-**Open question:** auto-copy on highlight? (User floated both "highlight auto-copies" and "explicit copy button." Current default = explicit buttons, with auto-copy as optional toggle.)
+**Auto-copy on highlight:** default **ON** — highlighting any text immediately copies it to clipboard. User-toggleable off in settings. Cut/copy buttons still available in State B for explicit control.
 
 ### Core mechanism — Hold-Right-Click command mode
 
@@ -117,6 +117,6 @@ Mostly dropped (volume/brightness/lock/spotlight all have native clickable paths
 **Dropped:** ⌘T/N/L/O as shortcuts (Radial 2 keeps T/N/W only), refresh, window tiling, volume/brightness/lock/spotlight.
 
 ## Open questions
-1. Auto-copy on highlight — default off, optional toggle?
-2. Cross-platform: which OS is the v1 build target before abstracting?
-3. How are radials rendered + input intercepted globally? (OS accessibility/event-tap layer — needs a technical spike.)
+1. **Technical spike:** how to intercept mouse events globally + draw radials over every app on macOS. Path: `CGEventTap` for capture/synthesis, transparent always-on-top overlay window (NSPanel) for radials, Accessibility API (AXUIElement) to read focused-element/selection state. Must confirm event-tap can suppress/reshape native right-click and that Wispr Flow + Whisker event taps don't conflict.
+
+Resolved: auto-copy default ON (toggleable); v1 target = macOS.
