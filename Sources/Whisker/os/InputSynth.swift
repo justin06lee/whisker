@@ -40,6 +40,16 @@ enum InputSynth {
         up?.post(tap: .cgSessionEventTap)
     }
 
+    static func rightClick(at point: CGPoint) {
+        let src = CGEventSource(stateID: .combinedSessionState)
+        let down = CGEvent(mouseEventSource: src, mouseType: .rightMouseDown, mouseCursorPosition: point, mouseButton: .right)
+        let up = CGEvent(mouseEventSource: src, mouseType: .rightMouseUp, mouseCursorPosition: point, mouseButton: .right)
+        down?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
+        up?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
+        down?.post(tap: .cgSessionEventTap)
+        up?.post(tap: .cgSessionEventTap)
+    }
+
     /// ⌘Tab step. v1 posts a full ⌘-press+Tab each step (good enough for adjacent switching).
     static func switchApp(forward: Bool) {
         let combo = KeyCombo(keyCode: 0x30, command: true, shift: !forward) // Tab, +Shift to go back

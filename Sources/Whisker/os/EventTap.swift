@@ -48,7 +48,6 @@ final class EventTap {
             (1 << CGEventType.leftMouseUp.rawValue) |
             (1 << CGEventType.otherMouseDown.rawValue) |
             (1 << CGEventType.otherMouseUp.rawValue) |
-            (1 << CGEventType.mouseMoved.rawValue) |
             (1 << CGEventType.leftMouseDragged.rawValue) |
             (1 << CGEventType.otherMouseDragged.rawValue) |
             (1 << CGEventType.scrollWheel.rawValue)
@@ -108,7 +107,7 @@ final class EventTap {
 
         switch gesture {
         case .buttonDown(.right, _, _), .buttonUp(.right, _, _):
-            return !actions.contains(.passThroughRightClick)
+            return true   // always consumed; pass-through is re-synthesized on .passThroughRightClick
         case .buttonDown(.middle, _, _), .buttonUp(.middle, _, _):
             return true
         case .buttonDown(.left, _, _), .buttonUp(.left, _, _):
@@ -128,7 +127,7 @@ final class EventTap {
             return .buttonDown(.middle, at: loc, time: time)
         case .otherMouseUp where event.getIntegerValueField(.mouseEventButtonNumber) == 2:
             return .buttonUp(.middle, at: loc, time: time)
-        case .leftMouseDragged, .otherMouseDragged, .mouseMoved:
+        case .leftMouseDragged, .otherMouseDragged:
             return .dragged(to: loc, time: time)
         case .scrollWheel:
             return .scrolled(deltaY: Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1)), time: time)

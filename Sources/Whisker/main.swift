@@ -44,12 +44,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.overlay = overlay
         self.screenshot = screenshot
 
-        let tap = EventTap(settings: .defaults) { [weak self] actions in
+        let tap = EventTap(settings: .current) { [weak self] actions in
             guard self != nil else { return }
             for action in actions {
                 switch action {
-                case .passThroughRightClick:
-                    break
+                case let .passThroughRightClick(at: point):
+                    InputSynth.rightClick(at: point)
                 case let .showRadial(kind, at: point):
                     overlay.showRadial(kind, atGlobalPoint: point)
                 case .hideRadial:

@@ -22,7 +22,7 @@ final class OverlayController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.level = .statusBar
-        panel.ignoresMouseEvents = false
+        panel.ignoresMouseEvents = true
         panel.hasShadow = false
 
         // Convert CG global (top-left origin) to Cocoa (bottom-left origin).

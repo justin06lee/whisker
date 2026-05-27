@@ -3,7 +3,7 @@ import CoreGraphics
 enum RadialKind: Equatable { case primary, secondary }   // Radial 1 / Radial 2
 
 enum GestureAction: Equatable {
-    case passThroughRightClick          // let the native context menu happen
+    case passThroughRightClick(at: CGPoint)   // re-synthesize a native right-click (context menu)
     case showRadial(RadialKind, at: CGPoint)
     case hideRadial
     case selectRadial(at: CGPoint)      // hit-test the radial at this point, fire the hit button, then hide

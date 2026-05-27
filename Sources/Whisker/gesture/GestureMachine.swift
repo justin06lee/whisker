@@ -81,9 +81,9 @@ struct GestureMachine {
             return [.showRadial(.secondary, at: point)]
 
         // window expired with no second click -> it was a lone tap
-        case let (.awaitingSecondRight(_, since), .tick(time)) where time - since > settings.doubleClickInterval:
+        case let (.awaitingSecondRight(point, since), .tick(time)) where time - since > settings.doubleClickInterval:
             state = .idle
-            return [.passThroughRightClick]
+            return [.passThroughRightClick(at: point)]
 
         // Radial 2: left-click selects the button at the click point
         case let (.secondaryRadial, .buttonDown(.left, point, _)):
