@@ -21,9 +21,31 @@ import CoreGraphics
 enum AXContext {
     struct Focus: Equatable {
         let isTextField: Bool
-        let selectedText: String      // empty if none
-        let caretRect: CGRect?        // screen rect (CG global, top-left origin) of caret/selection; nil if unavailable
+        let selectedText: String        // empty if none
+        let caretRect: CGRect?          // CG global (top-left); caret/selection bounds
+        let elementFrame: CGRect?       // CG global (top-left); focused element or its window
         var hasSelection: Bool { !selectedText.isEmpty }
+    }
+
+    private static func readPoint(_ el: AXUIElement, _ attr: String) -> CGPoint? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &ref) == .success,
+              let v = ref, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+        var p = CGPoint.zero
+        return AXValueGetValue(v as! AXValue, .cgPoint, &p) ? p : nil
+    }
+    private static func readSize(_ el: AXUIElement, _ attr: String) -> CGSize? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &ref) == .success,
+              let v = ref, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+        var s = CGSize.zero
+        return AXValueGetValue(v as! AXValue, .cgSize, &s) ? s : nil
+    }
+    private static func frame(of el: AXUIElement) -> CGRect? {
+        if let p = readPoint(el, "AXPosition"), let s = readSize(el, "AXSize") {
+            return CGRect(origin: p, size: s)
+        }
+        return nil
     }
 
     static func current() -> Focus {
@@ -31,7 +53,7 @@ enum AXContext {
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(system, "AXFocusedUIElement" as CFString, &focused) == .success,
               let element = focused else {
-            return Focus(isTextField: false, selectedText: "", caretRect: nil)
+            return Focus(isTextField: false, selectedText: "", caretRect: nil, elementFrame: nil)
         }
         let el = element as! AXUIElement
 
@@ -77,7 +99,26 @@ enum AXContext {
             }
         }
 
-        return Focus(isTextField: isText, selectedText: selected, caretRect: caretRect)
+        // Reject an implausible caret when there is NO selection. A real text caret
+        // has a small line-height rect; bogus rects (e.g. some browsers) come back
+        // huge or zero-height. Skip this when there IS a selection — multi-line
+        // selections can legitimately be tall/wide.
+        if selected.isEmpty, let r = caretRect,
+           r.height <= 0 || r.height > 120 || r.width < 0 || r.width > 80 {
+            caretRect = nil
+        }
+
+        // Focused element's own frame, else its containing window's frame.
+        var elementFrame: CGRect? = frame(of: el)
+        if elementFrame == nil {
+            var winRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(el, "AXWindow" as CFString, &winRef) == .success,
+               let w = winRef {
+                elementFrame = frame(of: w as! AXUIElement)
+            }
+        }
+
+        return Focus(isTextField: isText, selectedText: selected, caretRect: caretRect, elementFrame: elementFrame)
     }
 
     /// One-shot diagnostic: dumps the focused element's role/subrole/attributes and
@@ -112,7 +153,7 @@ enum AXContext {
         return """
         frontmost=\(frontmostBundleID ?? "nil")
         role=\(attr("AXRole"))  subrole=\(attr("AXSubrole"))
-        isTextField=\(f.isTextField)  hasSelection=\(f.hasSelection)  caretRect=\(caretDesc)
+        isTextField=\(f.isTextField)  hasSelection=\(f.hasSelection)  caretRect=\(caretDesc)  elementFrame=\(f.elementFrame.map { "\($0)" } ?? "nil")
         attrs=[\(attrs.joined(separator: ", "))]
         params=[\(params.joined(separator: ", "))]
         """
