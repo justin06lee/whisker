@@ -48,14 +48,14 @@ scripts/build-dmg.sh           # builds build/Whisker.app and build/Whisker.dmg
 
 ### Why `make-signing-cert.sh` matters (Accessibility re-prompt fix)
 
-macOS ties an Accessibility grant to the app's code-signing **designated requirement**. An *ad-hoc* signature (`codesign -s -`) has no stable identity — its requirement is the exact binary hash, which changes on **every rebuild** — so macOS treats each new build as a different app and re-asks for Accessibility, leaving stale (still-checked-but-dead) entries behind. `make-signing-cert.sh` creates a self-signed code-signing certificate; `build-dmg.sh` then signs every build with it, producing a **constant** requirement (`identifier "sh.tenet.whisker" and certificate leaf = H"…"`) so the grant **persists across rebuilds**. No Apple Developer account needed. (The cert is untrusted, so first launch of a fresh install still needs right-click → Open for Gatekeeper — that's separate from Accessibility.)
+macOS ties an Accessibility grant to the app's code-signing **designated requirement**. An *ad-hoc* signature (`codesign -s -`) has no stable identity — its requirement is the exact binary hash, which changes on **every rebuild** — so macOS treats each new build as a different app and re-asks for Accessibility, leaving stale (still-checked-but-dead) entries behind. `make-signing-cert.sh` creates a self-signed code-signing certificate; `build-dmg.sh` then signs every build with it, producing a **constant** requirement (`identifier "dev.justin06lee.whisker" and certificate leaf = H"…"`) so the grant **persists across rebuilds**. No Apple Developer account needed. (The cert is untrusted, so first launch of a fresh install still needs right-click → Open for Gatekeeper — that's separate from Accessibility.)
 
 ### One-time cleanup when switching from old ad-hoc builds
 
 If you previously ran ad-hoc builds, macOS has stale Accessibility entries. Reset once:
 
 ```bash
-tccutil reset Accessibility sh.tenet.whisker
+tccutil reset Accessibility dev.justin06lee.whisker
 ```
 
 Then remove any leftover "Whisker" rows in **Privacy & Security ▸ Accessibility**, launch the newly signed app, and grant **once**. Future rebuilds keep the grant.
