@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenshot: ScreenshotController?
     private var textButtons: TextButtonsController?
     private var axPollTimer: Timer?
+    private var followTimer: Timer?
+    private var lastMouse: CGPoint = .zero
     private var lastSelectedText: String = ""
     private var autoCopyOnHighlight = Settings.current.autoCopyOnHighlight
     private var autoCopyItem: NSMenuItem?
@@ -106,6 +108,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             self?.applyFocus(focus, mouseLocation: mouse)
                         }
                     }
+                }
+            }
+        }
+
+        // Smoothly follow the cursor at ~60fps while it moves fast; freeze when it slows
+        // so the offset buttons stay clickable (following during a click-approach would
+        // push them away). Only reads NSEvent.mouseLocation — no AX IPC — so it's cheap.
+        followTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let buttons = self.textButtons, buttons.isVisible else {
+                    self?.lastMouse = NSEvent.mouseLocation
+                    return
+                }
+                let mouse = NSEvent.mouseLocation
+                let dx = mouse.x - self.lastMouse.x
+                let dy = mouse.y - self.lastMouse.y
+                self.lastMouse = mouse
+                let dist = (dx * dx + dy * dy).squareRoot()
+                if dist > 6 {   // ~360 px/s at 60fps; fast move = glide, slow/aim = freeze. Tunable.
+                    buttons.reposition(toCocoaPoint: mouse)
                 }
             }
         }
