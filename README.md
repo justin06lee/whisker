@@ -35,9 +35,30 @@ swift build
 swift run Whisker
 ```
 
-Whisker runs as a menu-bar agent (no Dock icon). On first launch, grant **Accessibility** access (Privacy & Security ▸ Accessibility) and relaunch. Region screenshots additionally require **Screen Recording** permission.
+Whisker shows in the Dock and the menu bar. On first launch, grant **Accessibility** access (Privacy & Security ▸ Accessibility) and relaunch. Region screenshots additionally require **Screen Recording** permission.
 
-Toggle auto-copy-on-highlight from the menu-bar 🐱 menu.
+Toggle auto-copy-on-highlight from the menu-bar icon's menu.
+
+## Packaging a `.app` / DMG
+
+```bash
+scripts/make-signing-cert.sh   # run ONCE — creates a stable self-signed signing identity
+scripts/build-dmg.sh           # builds build/Whisker.app and build/Whisker.dmg
+```
+
+### Why `make-signing-cert.sh` matters (Accessibility re-prompt fix)
+
+macOS ties an Accessibility grant to the app's code-signing **designated requirement**. An *ad-hoc* signature (`codesign -s -`) has no stable identity — its requirement is the exact binary hash, which changes on **every rebuild** — so macOS treats each new build as a different app and re-asks for Accessibility, leaving stale (still-checked-but-dead) entries behind. `make-signing-cert.sh` creates a self-signed code-signing certificate; `build-dmg.sh` then signs every build with it, producing a **constant** requirement (`identifier "sh.tenet.whisker" and certificate leaf = H"…"`) so the grant **persists across rebuilds**. No Apple Developer account needed. (The cert is untrusted, so first launch of a fresh install still needs right-click → Open for Gatekeeper — that's separate from Accessibility.)
+
+### One-time cleanup when switching from old ad-hoc builds
+
+If you previously ran ad-hoc builds, macOS has stale Accessibility entries. Reset once:
+
+```bash
+tccutil reset Accessibility sh.tenet.whisker
+```
+
+Then remove any leftover "Whisker" rows in **Privacy & Security ▸ Accessibility**, launch the newly signed app, and grant **once**. Future rebuilds keep the grant.
 
 ## Tests
 
