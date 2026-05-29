@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(copyItem)
         self.autoCopyItem = copyItem
         menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Capture focus info (2s) → clipboard",
+                                action: #selector(captureFocusInfo), keyEquivalent: ""))
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Whisker", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
 
@@ -99,11 +102,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard self != nil else { return }
                 let mouse = NSEvent.mouseLocation   // main-thread snapshot
+                let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 axQueue.async {
                     let focus = AXContext.current() // off-main: cross-process AX IPC
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
-                            self?.applyFocus(focus, mouseLocation: mouse)
+                            self?.applyFocus(focus, mouseLocation: mouse, frontmostBundleID: bundleID)
                         }
                     }
                 }
@@ -111,8 +115,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // Frontmost-app bundle-id substrings that indicate a terminal emulator.
+    private static let terminalHints = ["term", "iterm", "warp", "ghostty",
+                                        "alacritty", "kitty", "wezterm", "hyper", "tabby"]
+    private func isTerminal(_ bundleID: String?) -> Bool {
+        guard let b = bundleID?.lowercased() else { return false }
+        return Self.terminalHints.contains { b.contains($0) }
+    }
+
     @MainActor
-    private func applyFocus(_ focus: AXContext.Focus, mouseLocation mouse: CGPoint) {
+    private func applyFocus(_ focus: AXContext.Focus,
+                            mouseLocation mouse: CGPoint,
+                            frontmostBundleID bundleID: String?) {
         if autoCopyOnHighlight, focus.hasSelection, focus.selectedText != lastSelectedText {
             let pb = NSPasteboard.general
             pb.clearContents()
@@ -120,7 +134,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         lastSelectedText = focus.selectedText
 
-        if focus.isTextField {
+        let terminal = isTerminal(bundleID)
+        if focus.isTextField || terminal {
             let set: [TextEditButton] = focus.hasSelection
                 ? [.deleteSelection, .cut, .copy]
                 : [.deleteChar, .paste]
@@ -162,6 +177,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         s.autoCopyOnHighlight = autoCopyOnHighlight
         s.save()
         autoCopyItem?.state = autoCopyOnHighlight ? .on : .off
+    }
+
+    @MainActor @objc private func captureFocusInfo() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            MainActor.assumeIsolated {
+                let info = AXContext.debugSnapshot(
+                    frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(info, forType: .string)
+                NSSound.beep()   // audible cue that the snapshot was captured + copied
+            }
+        }
     }
 
     @MainActor @objc private func quit() { NSApp.terminate(nil) }

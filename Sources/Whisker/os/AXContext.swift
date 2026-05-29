@@ -79,4 +79,42 @@ enum AXContext {
 
         return Focus(isTextField: isText, selectedText: selected, caretRect: caretRect)
     }
+
+    /// One-shot diagnostic: dumps the focused element's role/subrole/attributes and
+    /// whether the caret rect resolves, plus the frontmost bundle id. For debugging
+    /// why the edit buttons do/don't appear in a given app. Run on the main thread.
+    static func debugSnapshot(frontmostBundleID: String?) -> String {
+        let system = AXUIElementCreateSystemWide()
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(system, "AXFocusedUIElement" as CFString, &focused) == .success,
+              let el0 = focused else {
+            return "frontmost=\(frontmostBundleID ?? "nil")\nfocused element: NONE"
+        }
+        let el = el0 as! AXUIElement
+
+        func attr(_ name: String) -> String {
+            var r: CFTypeRef?
+            AXUIElementCopyAttributeValue(el, name as CFString, &r)
+            return (r as? String) ?? "—"
+        }
+
+        var namesRef: CFArray?
+        AXUIElementCopyAttributeNames(el, &namesRef)
+        let attrs = (namesRef as? [String]) ?? []
+
+        var paramRef: CFArray?
+        AXUIElementCopyParameterizedAttributeNames(el, &paramRef)
+        let params = (paramRef as? [String]) ?? []
+
+        let f = current()
+        let caretDesc = f.caretRect.map { "\($0)" } ?? "nil"
+
+        return """
+        frontmost=\(frontmostBundleID ?? "nil")
+        role=\(attr("AXRole"))  subrole=\(attr("AXSubrole"))
+        isTextField=\(f.isTextField)  hasSelection=\(f.hasSelection)  caretRect=\(caretDesc)
+        attrs=[\(attrs.joined(separator: ", "))]
+        params=[\(params.joined(separator: ", "))]
+        """
+    }
 }
