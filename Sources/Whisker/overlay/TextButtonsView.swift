@@ -86,39 +86,52 @@ final class TextButtonsController {
     private var shownButtons: [TextEditButton] = []
     var onTap: ((TextEditButton) -> Void)?
 
-    /// Show the given button set with its bottom-left placed EXACTLY at `point`
-    /// (global Cocoa coords, bottom-left origin). The caller bakes in any gap/offset.
+    /// Where the panel's bottom-left should be (global Cocoa coords, bottom-left
+    /// origin) and where it currently is. The glide timer eases `currentOrigin`
+    /// toward `targetOrigin` so the panel slides smoothly as the caret moves instead
+    /// of teleporting character-by-character on every AX poll.
+    private var targetOrigin: CGPoint = .zero
+    private var currentOrigin: CGPoint = .zero
+    private var glideTimer: Timer?
+
+    /// Show the given button set with its bottom-left placed at `point` (global Cocoa
+    /// coords, bottom-left origin). The caller bakes in any gap/offset.
     ///
     /// - Empty set => hide.
-    /// - Panel nil or button set changed => (re)create the panel at `point`.
-    /// - Same button set => just `setFrame` the existing panel to the new point so it
-    ///   tracks the caret as it moves (no recreation, no redraw: `display: false`).
+    /// - Panel nil or button set changed => (re)create the panel; SNAP it to `point`
+    ///   immediately, fade in, and start the glide timer.
+    /// - Same button set (already visible) => only update `targetOrigin`; the glide
+    ///   timer eases the panel there. No setFrame, no re-fade here.
     func show(_ buttons: [TextEditButton], atCocoaPoint point: CGPoint) {
         if buttons.isEmpty { hide(); return }
         let width = CGFloat(buttons.count) * 44
-        let frame = NSRect(x: point.x, y: point.y, width: width, height: 40)
+        let size = NSSize(width: width, height: 40)
 
-        if let panel, shownButtons == buttons {
-            panel.setFrame(frame, display: false)
-            return
-        }
+        // The caret target is always the latest poll's point.
+        targetOrigin = point
 
+        // Same set, already visible: leave the glide timer to move the panel. Do NOT
+        // setFrame and do NOT re-fade — this is what stops the per-keystroke teleport.
+        if panel != nil, shownButtons == buttons { return }
+
+        // (Re)create: snap to the target and place there immediately.
         hide()
+        currentOrigin = point
+        let frame = NSRect(origin: point, size: size)
         let p = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isOpaque = false; p.backgroundColor = .clear; p.level = .statusBar; p.hasShadow = false
         let v = TextButtonsView(buttons: buttons)
-        v.frame = NSRect(origin: .zero, size: frame.size)
+        v.frame = NSRect(origin: .zero, size: size)
         v.onTap = { [weak self] b in self?.onTap?(b) }
         p.contentView = v
+        p.setFrameOrigin(currentOrigin)
         p.orderFrontRegardless()
 
-        // Fade in on first appearance / button-set change only (not on caret-tracking
-        // repositions, which take the early-return setFrame branch above). A pure
-        // alpha fade is used deliberately: animating layer.anchorPoint to center for a
-        // scale-in shifts a view-backed layer and can fight AppKit's frame-driven
-        // layout, causing the buttons to drift. A clean fade with zero positional
-        // drift is preferable here, so the scale is intentionally dropped.
+        // Fade in on (re)create only — never on glide. A pure alpha fade is used
+        // deliberately: animating layer.anchorPoint to center for a scale-in shifts a
+        // view-backed layer and can fight AppKit's frame-driven layout, causing the
+        // buttons to drift. A clean fade with zero positional drift is preferable.
         p.alphaValue = 0
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.14
@@ -128,9 +141,35 @@ final class TextButtonsController {
 
         panel = p
         shownButtons = buttons
+        startGlide()
+    }
+
+    /// 60fps exponential-smoothing glide of the panel origin toward `targetOrigin`.
+    /// `MainActor.assumeIsolated` is sound: the timer is scheduled on the main run
+    /// loop, so the closure always runs main-actor-isolated (same pattern as
+    /// `EventTap`/`RadialNSView`).
+    private func startGlide() {
+        guard glideTimer == nil else { return }
+        glideTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard let panel = self.panel else { return }
+                let dx = self.targetOrigin.x - self.currentOrigin.x
+                let dy = self.targetOrigin.y - self.currentOrigin.y
+                if abs(dx) < 0.5 && abs(dy) < 0.5 {
+                    self.currentOrigin = self.targetOrigin
+                } else {
+                    self.currentOrigin.x += dx * 0.35   // exponential smoothing; ~converges in ~10 frames
+                    self.currentOrigin.y += dy * 0.35
+                }
+                panel.setFrameOrigin(self.currentOrigin)
+            }
+        }
     }
 
     func hide() {
-        panel?.orderOut(nil); panel = nil; shownButtons = []
+        glideTimer?.invalidate(); glideTimer = nil
+        panel?.orderOut(nil); panel = nil
+        shownButtons = []
     }
 }
