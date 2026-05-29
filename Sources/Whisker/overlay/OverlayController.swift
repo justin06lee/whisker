@@ -26,6 +26,7 @@ final class OverlayController {
         panel.level = .statusBar
         panel.ignoresMouseEvents = true
         panel.hasShadow = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
 
         // Menu center in the view's local (bottom-left) coords = cursor minus screen origin.
         let viewCenter = CGPoint(x: cursor.x - frame.origin.x, y: cursor.y - frame.origin.y)

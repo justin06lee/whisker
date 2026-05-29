@@ -31,6 +31,7 @@ final class ScreenshotController {
         w.ignoresMouseEvents = true
         let v = SelectionView(frame: NSRect(origin: .zero, size: screen.frame.size))
         w.contentView = v
+        w.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         w.orderFrontRegardless()
         selectionWindow = w; selectionView = v
     }

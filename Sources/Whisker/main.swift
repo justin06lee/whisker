@@ -95,24 +95,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // recovers that isolation; it is sound here because the timer is scheduled
         // on the main run loop (same technique used in EventTap's C trampoline).
         //
-        // We snapshot `NSEvent.mouseLocation` on the main thread (AppKit state is
-        // main-actor-isolated under Swift 6; reading it here pairs the mouse coord
-        // with a consistent baseline anyway) and then dispatch the synchronous AX
-        // read to a background queue. AX queries are cross-process IPC and can
-        // stall tens of ms each; keeping them off the main thread is the primary
-        // fix for cursor-area jank. UI mutation hops back to the main thread.
+        // The synchronous AX read is dispatched to a background queue: AX queries are
+        // cross-process IPC and can stall tens of ms each; keeping them off the main
+        // thread is the primary fix for cursor-area jank. UI mutation hops back to the
+        // main thread. The poll only needs the caret-bearing `Focus`; no mouse/bundle/
+        // pid snapshots (those fallbacks were deleted — `captureFocusInfo` keeps its own).
         let axQueue = DispatchQueue(label: "whisker.ax", qos: .userInitiated)
         axPollTimer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard self != nil else { return }
-                let mouse = NSEvent.mouseLocation   // main-thread snapshot
-                let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-                let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
                 axQueue.async {
                     let focus = AXContext.current() // off-main: cross-process AX IPC
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
-                            self?.applyFocus(focus, mouseLocation: mouse, frontmostBundleID: bundleID, frontmostPID: pid)
+                            self?.applyFocus(focus)
                         }
                     }
                 }
@@ -120,23 +116,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // Frontmost-app bundle-id substrings that indicate a terminal emulator.
-    private static let terminalHints = ["term", "iterm", "warp", "ghostty",
-                                        "alacritty", "kitty", "wezterm", "hyper", "tabby"]
-    private func isTerminal(_ bundleID: String?) -> Bool {
-        guard let b = bundleID?.lowercased() else { return false }
-        return Self.terminalHints.contains { b.contains($0) }
-    }
-
     private func pointOnAnyScreen(_ p: CGPoint) -> Bool {
         NSScreen.screens.contains { $0.frame.contains(p) }
     }
 
     @MainActor
-    private func applyFocus(_ focus: AXContext.Focus,
-                            mouseLocation mouse: CGPoint,
-                            frontmostBundleID bundleID: String?,
-                            frontmostPID pid: pid_t?) {
+    private func applyFocus(_ focus: AXContext.Focus) {
+        // Auto-copy a newly-appeared non-empty selection (independent of button display).
         if autoCopyOnHighlight, focus.hasSelection, focus.selectedText != lastSelectedText {
             let pb = NSPasteboard.general
             pb.clearContents()
@@ -144,73 +130,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         lastSelectedText = focus.selectedText
 
-        let terminal = isTerminal(bundleID)
-        if focus.isTextField || terminal {
+        // Show ONLY at a usable on-screen caret. A caret rect from AXBoundsForRange means
+        // the element is an editable text location; absence means "not a text spot" -> hide.
+        if let anchor = caretAnchor(focus.caretRect, hasSelection: focus.hasSelection) {
             let set: [TextEditButton] = focus.hasSelection
                 ? [.deleteSelection, .cut, .copy]
                 : [.deleteChar, .paste]
-            let anchor = anchorPoint(focus: focus, terminal: terminal, pid: pid, mouse: mouse)
             textButtons?.show(set, atCocoaPoint: anchor)
         } else {
             textButtons?.hide()
         }
     }
 
-    /// Top-right corner of the frontmost on-screen window for `pid`, converted to the
-    /// Cocoa-global bottom-left point where a panel of the given size should sit (inset inside).
-    /// Uses CGWindowList (works even for GPU-rendered apps with no AX). Returns nil if unavailable.
-    private func windowAnchor(pid: pid_t?, panelWidth: CGFloat, panelHeight: CGFloat) -> CGPoint? {
-        guard let pid else { return nil }
-        let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { return nil }
-        var best: CGRect?
-        var bestArea: CGFloat = 0
-        for info in list {
-            guard let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner == pid else { continue }
-            let layer = (info[kCGWindowLayer as String] as? Int) ?? 0
-            guard layer == 0 else { continue }
-            guard let boundsDict = info[kCGWindowBounds as String],
-                  let rect = CGRect(dictionaryRepresentation: boundsDict as! CFDictionary) else { continue }
-            let area = rect.width * rect.height
-            if area > bestArea { bestArea = area; best = rect }
-        }
-        guard let f = best else { return nil }
-        let topRight = Coords.cocoaGlobal(fromCG: CGPoint(x: f.maxX, y: f.minY))
-        let pt = CGPoint(x: topRight.x - panelWidth - 12, y: topRight.y - panelHeight - 12)
-        return pointOnAnyScreen(pt) ? pt : nil
-    }
-
-    /// Where the floating buttons' bottom-left should sit (Cocoa-global).
-    /// Chain: (non-terminal) sane on-screen caret → element/window frame top-right →
-    /// frontmost-window top-right (CGWindowList) → mouse. Terminals skip the caret.
-    private func anchorPoint(focus: AXContext.Focus, terminal: Bool, pid: pid_t?, mouse: CGPoint) -> CGPoint {
-        let panelW = CGFloat(focus.hasSelection ? 3 : 2) * 44
+    /// Bottom-left (Cocoa-global) where the buttons should sit: just ABOVE the caret line.
+    /// Returns nil if there is no caret or it doesn't land on a real screen.
+    private func caretAnchor(_ caret: CGRect?, hasSelection: Bool) -> CGPoint? {
+        guard let r = caret else { return nil }
+        let panelW = CGFloat(hasSelection ? 3 : 2) * 44
         let panelH: CGFloat = 40
-        let gap: CGFloat = focus.hasSelection ? 10 : 4   // selection sits slightly higher
-
-        // 1) Caret (non-terminal only), if it maps onto a real screen.
-        if !terminal, let r = focus.caretRect {
-            let top = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.minY))
-            var y = top.y + gap
-            if y + panelH > Coords.primaryHeight() {
-                let bottom = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.maxY))
-                y = bottom.y - gap - panelH
-            }
-            let pt = CGPoint(x: top.x, y: y)
-            if pointOnAnyScreen(pt) { return pt }
+        let gap: CGFloat = hasSelection ? 10 : 4   // selection sits slightly higher
+        let top = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.minY))
+        guard pointOnAnyScreen(top) else { return nil }
+        var y = top.y + gap
+        if y + panelH > Coords.primaryHeight() {                 // would clip top of screen
+            let bottom = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.maxY))
+            y = bottom.y - gap - panelH                          // place just below the line
         }
-        // 2) Focused element / window frame top-right (stable).
-        if let f = focus.elementFrame {
-            let topRight = Coords.cocoaGlobal(fromCG: CGPoint(x: f.maxX, y: f.minY))
-            let pt = CGPoint(x: topRight.x - panelW - 12, y: topRight.y - panelH - 12)
-            if pointOnAnyScreen(pt) { return pt }
-        }
-        // 3) Frontmost window via CGWindowList (works for GPU terminals).
-        if let pt = windowAnchor(pid: pid, panelWidth: panelW, panelHeight: panelH) {
-            return pt
-        }
-        // 4) Last resort: near the mouse.
-        return CGPoint(x: mouse.x, y: mouse.y + 28)
+        _ = panelW
+        return CGPoint(x: top.x, y: y)
     }
 
     // Defensive: even though Whisker has no persistent windows today, this keeps
