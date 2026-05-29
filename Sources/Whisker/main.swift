@@ -14,7 +14,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🐱"
+        if let icon = Self.menuBarIcon() {
+            statusItem.button?.image = icon
+        } else {
+            statusItem.button?.title = "🐱"   // fallback
+        }
 
         let menu = NSMenu()
         let copyItem = NSMenuItem(title: "Auto-copy on highlight",
@@ -123,6 +127,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return Self.terminalHints.contains { b.contains($0) }
     }
 
+    private func pointOnAnyScreen(_ p: CGPoint) -> Bool {
+        NSScreen.screens.contains { $0.frame.contains(p) }
+    }
+
     @MainActor
     private func applyFocus(_ focus: AXContext.Focus,
                             mouseLocation mouse: CGPoint,
@@ -139,7 +147,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let set: [TextEditButton] = focus.hasSelection
                 ? [.deleteSelection, .cut, .copy]
                 : [.deleteChar, .paste]
-            textButtons?.show(set, atCocoaPoint: anchorPoint(caret: focus.caretRect, fallbackMouse: mouse))
+
+            // Terminals have no reliable caret bounds -> anchor at the mouse.
+            // Otherwise prefer the caret, but only if it maps onto a real screen
+            // (some apps return bogus near-origin rects that land on the primary).
+            let caret = terminal ? nil : focus.caretRect
+            var anchor = anchorPoint(caret: caret, fallbackMouse: mouse)
+            if !pointOnAnyScreen(anchor) {
+                anchor = CGPoint(x: mouse.x, y: mouse.y + 28)
+            }
+            textButtons?.show(set, atCocoaPoint: anchor)
         } else {
             textButtons?.hide()
         }
@@ -182,17 +199,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor @objc private func captureFocusInfo() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             MainActor.assumeIsolated {
-                let info = AXContext.debugSnapshot(
-                    frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+                let bundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                let ax = AXContext.debugSnapshot(frontmostBundleID: bundle)
+                let focus = AXContext.current()
+                let mouse = NSEvent.mouseLocation
+                let screens = NSScreen.screens.map { s in
+                    "\(NSStringFromRect(s.frame))\(s.frame.origin == .zero ? " [primary]" : "")"
+                }.joined(separator: "  |  ")
+                let caretLine: String
+                if let r = focus.caretRect {
+                    let cocoa = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.minY))
+                    caretLine = "caretCG=\(NSStringFromRect(r))  caretCocoa=\(NSStringFromPoint(cocoa))  onScreen=\(NSScreen.screens.contains { $0.frame.contains(cocoa) })"
+                } else {
+                    caretLine = "caretCG=nil"
+                }
+                let extra = """
+
+                primaryHeight=\(Coords.primaryHeight())
+                mouseCocoa=\(NSStringFromPoint(mouse))
+                screens=\(screens)
+                \(caretLine)
+                """
                 let pb = NSPasteboard.general
                 pb.clearContents()
-                pb.setString(info, forType: .string)
-                NSSound.beep()   // audible cue that the snapshot was captured + copied
+                pb.setString(ax + extra, forType: .string)
+                NSSound.beep()
             }
         }
     }
 
     @MainActor @objc private func quit() { NSApp.terminate(nil) }
+
+    private static func menuBarIcon() -> NSImage? {
+        var img: NSImage?
+        // Packaged .app: the raw PNG is copied into Contents/Resources by build-dmg.sh,
+        // so Bundle.main finds it directly (and the .app stays code-signable). This is
+        // the path that resolves in the signed, drag-installed build.
+        if let url = Bundle.main.url(forResource: "whisker", withExtension: "png") {
+            img = NSImage(contentsOf: url)
+        }
+        // SwiftPM dev runs (`swift run`): the resource lives in Bundle.module.
+        if img == nil, let url = Bundle.module.url(forResource: "whisker", withExtension: "png") {
+            img = NSImage(contentsOf: url)
+        }
+        // Last-ditch dev fallback: load from the user's Pictures folder.
+        if img == nil {
+            img = NSImage(contentsOfFile: ("~/Pictures/pfp/whisker.png" as NSString).expandingTildeInPath)
+        }
+        guard let base = img else { return nil }
+        let size = NSSize(width: 18, height: 18)
+        let resized = NSImage(size: size)
+        resized.lockFocus()
+        base.draw(in: NSRect(origin: .zero, size: size),
+                  from: NSRect(origin: .zero, size: base.size),
+                  operation: .sourceOver, fraction: 1.0)
+        resized.unlockFocus()
+        resized.isTemplate = false   // keep the pfp in color
+        return resized
+    }
 }
 
 let app = NSApplication.shared
