@@ -86,21 +86,23 @@ final class TextButtonsController {
     private var shownButtons: [TextEditButton] = []
     var onTap: ((TextEditButton) -> Void)?
 
-    /// True while a panel is on screen. The 60fps follow timer uses this to know
-    /// whether there's anything to reposition.
-    var isVisible: Bool { panel != nil }
-
-    /// Show the given button set anchored just ABOVE the given screen point (Cocoa coords, bottom-left origin).
-    /// The panel is (re)created — and positioned at `point` — ONLY when the button
-    /// set changes (or on first show). For the SAME button set this is a no-op:
-    /// continuous position is owned by the 60fps `reposition(toCocoaPoint:)` follow
-    /// timer, so re-showing the same set must not fight it by snapping the panel
-    /// back to the AX-poll location. Pass [] / call hide() to remove.
+    /// Show the given button set with its bottom-left placed EXACTLY at `point`
+    /// (global Cocoa coords, bottom-left origin). The caller bakes in any gap/offset.
+    ///
+    /// - Empty set => hide.
+    /// - Panel nil or button set changed => (re)create the panel at `point`.
+    /// - Same button set => just `setFrame` the existing panel to the new point so it
+    ///   tracks the caret as it moves (no recreation, no redraw: `display: false`).
     func show(_ buttons: [TextEditButton], atCocoaPoint point: CGPoint) {
         if buttons.isEmpty { hide(); return }
-        guard panel == nil || shownButtons != buttons else { return }
         let width = CGFloat(buttons.count) * 44
-        let frame = NSRect(x: point.x, y: point.y + 28, width: width, height: 40) // offset above cursor
+        let frame = NSRect(x: point.x, y: point.y, width: width, height: 40)
+
+        if let panel, shownButtons == buttons {
+            panel.setFrame(frame, display: false)
+            return
+        }
+
         hide()
         let p = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
@@ -112,15 +114,6 @@ final class TextButtonsController {
         p.orderFrontRegardless()
         panel = p
         shownButtons = buttons
-    }
-
-    /// Move the already-visible panel to follow the cursor. No recreation, no
-    /// content redraw — just a frame move (`display: false`). Geometry matches
-    /// `show`'s fresh-creation frame so the two stay consistent.
-    func reposition(toCocoaPoint point: CGPoint) {
-        guard let panel else { return }
-        let width = CGFloat(shownButtons.count) * 44
-        panel.setFrame(NSRect(x: point.x, y: point.y + 28, width: width, height: 40), display: false)
     }
 
     func hide() {
