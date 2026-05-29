@@ -125,6 +125,7 @@ final class TextButtonsController {
         v.frame = NSRect(origin: .zero, size: size)
         v.onTap = { [weak self] b in self?.onTap?(b) }
         p.contentView = v
+        p.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         p.setFrameOrigin(currentOrigin)
         p.orderFrontRegardless()
 

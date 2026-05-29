@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generates AppIcon.icns from a source PNG. Usage: scripts/make-icns.sh <src.png> <out.icns>
 set -euo pipefail
-SRC="${1:-/Users/huiyunlee/Pictures/pfp/whisker.png}"
+SRC="${1:-Sources/Whisker/Resources/appicon.png}"
 OUT="${2:-build/AppIcon.icns}"
 WORK="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$WORK" "$(dirname "$OUT")"

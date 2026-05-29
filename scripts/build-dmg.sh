@@ -17,16 +17,18 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Whisker"
 
 # Icon
-scripts/make-icns.sh "/Users/huiyunlee/Pictures/pfp/whisker.png" "$APP/Contents/Resources/AppIcon.icns"
+scripts/make-icns.sh "Sources/Whisker/Resources/appicon.png" "$APP/Contents/Resources/AppIcon.icns"
 
 # Info.plist
 cp Info.plist "$APP/Contents/Info.plist"
 
-# Menu-bar icon source. The app loads this via Bundle.main (Contents/Resources) in the
+# Icon sources. The app loads these via Bundle.main (Contents/Resources) in the
 # packaged build — this is what resolves in the signed, drag-installed .app. (Bundle.module
 # can't be used here: its generated accessor looks for the resource bundle at the .app root,
 # and macOS forbids non-Contents items at the bundle root, which breaks code signing.)
-cp Sources/Whisker/Resources/whisker.png "$APP/Contents/Resources/whisker.png"
+# menubar.png = transparent status-item icon; appicon.png = Dock/onboarding icon.
+cp Sources/Whisker/Resources/menubar.png "$APP/Contents/Resources/menubar.png"
+cp Sources/Whisker/Resources/appicon.png "$APP/Contents/Resources/appicon.png"
 
 # Also include the SwiftPM resource bundle under Contents/Resources (the canonical,
 # code-signable location). Harmless if Bundle.module never reads it.
@@ -55,12 +57,60 @@ else
   fi
 fi
 
-# Assemble DMG staging with an Applications symlink for drag-install.
+# ---- Styled DMG ----
 STAGING="build/dmg-staging"
-rm -rf "$STAGING"; mkdir -p "$STAGING"
+RW_DMG="build/Whisker-rw.dmg"
+VOL="Whisker"
+rm -rf "$STAGING" "$RW_DMG" "$DMG"
+mkdir -p "$STAGING"
 cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
-hdiutil create -volname "Whisker" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
+# Read-write DMG we can style, sized with headroom.
+hdiutil create -volname "$VOL" -srcfolder "$STAGING" -fs HFS+ \
+  -format UDRW -size 200m -ov "$RW_DMG"
+
+# Mount it.
+MOUNT="/Volumes/$VOL"
+DEV="$(hdiutil attach -readwrite -noverify -noautoopen "$RW_DMG" | grep -E '^/dev/' | head -1 | awk '{print $1}')"
+
+style_ok=1
+if [ -n "${DEV:-}" ] && [ -d "$MOUNT" ]; then
+  # Volume icon = app icon (shows the whisker icon on the mounted disk).
+  if cp "$APP/Contents/Resources/AppIcon.icns" "$MOUNT/.VolumeIcon.icns" 2>/dev/null; then
+    SetFile -a C "$MOUNT" 2>/dev/null || true
+  fi
+
+  # Finder layout via AppleScript, bounded by a 25s alarm so it can never hang the build.
+  perl -e 'alarm 25; exec @ARGV' osascript <<'APPLESCRIPT' >/dev/null 2>&1 || style_ok=0
+tell application "Finder"
+  tell disk "Whisker"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {200, 120, 800, 520}
+    set vo to the icon view options of container window
+    set arrangement of vo to not arranged
+    set icon size of vo to 128
+    set text size of vo to 12
+    set position of item "Whisker.app" of container window to {160, 200}
+    set position of item "Applications" of container window to {460, 200}
+    update without registering applications
+    delay 1
+    close
+  end tell
+end tell
+APPLESCRIPT
+  [ "$style_ok" = "0" ] && echo "DMG styling skipped (Finder automation unavailable) — shipping a plain layout."
+  sync
+  hdiutil detach "$DEV" >/dev/null 2>&1 || hdiutil detach "$DEV" -force >/dev/null 2>&1 || true
+else
+  echo "Could not mount RW DMG for styling — shipping a plain layout."
+fi
+
+# Convert to compressed read-only final DMG.
+hdiutil convert "$RW_DMG" -format UDZO -o "$DMG"
+rm -f "$RW_DMG"
 rm -rf "$STAGING"
 echo "Wrote $DMG and $APP"

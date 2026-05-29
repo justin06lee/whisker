@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "Whisker",
             path: "Sources/Whisker",
-            resources: [.copy("Resources/whisker.png")]
+            resources: [.copy("Resources/menubar.png"), .copy("Resources/appicon.png")]
         ),
         .testTarget(
             name: "WhiskerTests",
