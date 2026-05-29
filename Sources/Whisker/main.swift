@@ -130,19 +130,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Where the floating buttons' bottom-left should sit (global Cocoa coords, bottom-left origin).
-    /// Prefer just ABOVE the caret line; fall back to just above the mouse pointer.
+    /// Where the floating buttons' bottom-left should sit (Cocoa-global coords).
+    /// Anchored just above the caret line; flips to just below if it would run off
+    /// the top of the screen. Falls back to just above the mouse pointer.
     private func anchorPoint(caret: CGRect?, fallbackMouse mouse: CGPoint) -> CGPoint {
-        let gap: CGFloat = 6
+        let gap: CGFloat = 4
+        let panelHeight: CGFloat = 40
         if let r = caret, !(r.origin == .zero && r.size == .zero) {
-            // r is CG global (top-left origin). Convert the caret's TOP edge to Cocoa
-            // (bottom-left origin) using the primary screen height, then sit just above it.
-            let primaryHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height
-                ?? NSScreen.main?.frame.height ?? r.maxY
-            let caretTopCocoaY = primaryHeight - r.minY
-            return CGPoint(x: r.minX, y: caretTopCocoaY + gap)
+            // r is CG-global (top-left origin). Caret line top -> Cocoa global.
+            let lineTop = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.minY))
+            var y = lineTop.y + gap                       // panel bottom sits just above the line
+            if y + panelHeight > Coords.primaryHeight() { // would clip the top of the screen
+                let lineBottom = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.maxY))
+                y = lineBottom.y - gap - panelHeight       // place just below the line instead
+            }
+            return CGPoint(x: lineTop.x, y: y)
         }
-        return CGPoint(x: mouse.x, y: mouse.y + 28) // fallback near pointer
+        return CGPoint(x: mouse.x, y: mouse.y + 28)        // fallback near the pointer
     }
 
     // Defensive: even though Whisker has no persistent windows today, this keeps
