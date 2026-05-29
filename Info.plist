@@ -4,7 +4,7 @@
 <dict>
     <key>CFBundleName</key><string>Whisker</string>
     <key>CFBundleDisplayName</key><string>Whisker</string>
-    <key>CFBundleIdentifier</key><string>sh.tenet.whisker</string>
+    <key>CFBundleIdentifier</key><string>dev.justin06lee.whisker</string>
     <key>CFBundleExecutable</key><string>Whisker</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
