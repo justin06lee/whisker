@@ -1,58 +1,58 @@
 import AppKit
 import CoreGraphics
 
-// `@MainActor`: this controller owns AppKit objects (`NSPanel`, `RadialNSView`,
-// `NSScreen`) which are main-actor-isolated under Swift 6 strict concurrency.
-// Annotating the whole class keeps all access on the main actor; the existing
-// main-actor `AppDelegate` callers reach it without hops.
+// `@MainActor`: owns AppKit objects (NSPanel, RadialNSView, NSScreen) which are
+// main-actor-isolated under Swift 6.
 @MainActor
 final class OverlayController {
     private var panel: NSPanel?
     private var radialView: RadialNSView?
+    private var panelOrigin: CGPoint = .zero        // Cocoa-global origin of the panel
+    private let panelSize: CGFloat = 260            // fits radius 90 + 26px buttons + margin
 
-    func showRadial(_ kind: RadialKind, atGlobalPoint global: CGPoint) {
-        guard let screen = NSScreen.main else { return }
+    func showRadial(_ kind: RadialKind, atGlobalPoint cgPoint: CGPoint) {
         hide()
 
-        let panel = NSPanel(
-            contentRect: screen.frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered, defer: false
-        )
+        // Cursor in Cocoa-global coords; the panel is centered on it.
+        let center = Coords.cocoaGlobal(fromCG: cgPoint)
+        let origin = CGPoint(x: center.x - panelSize / 2, y: center.y - panelSize / 2)
+        let frame = NSRect(origin: origin, size: CGSize(width: panelSize, height: panelSize))
+
+        let panel = NSPanel(contentRect: frame,
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.level = .statusBar
-        panel.ignoresMouseEvents = true
+        panel.ignoresMouseEvents = true   // selection is programmatic via the event tap
         panel.hasShadow = false
 
-        // Convert CG global (top-left origin) to Cocoa (bottom-left origin).
-        let local = CGPoint(x: global.x - screen.frame.minX,
-                            y: screen.frame.height - (global.y - screen.frame.minY))
-        let menu = RadialMenu(kind: kind, center: local, radius: 90)
+        // The menu is centered in the panel's own view coords (bottom-left origin).
+        let viewCenter = CGPoint(x: panelSize / 2, y: panelSize / 2)
+        let menu = RadialMenu(kind: kind, center: viewCenter, radius: 90)
         let view = RadialNSView(menu: menu)
-        view.frame = NSRect(origin: .zero, size: screen.frame.size)
+        view.frame = NSRect(origin: .zero, size: frame.size)
         view.onSelect = { [weak self] button in
-            switch button.action { case let .key(combo): InputSynth.post(combo) }
+            if case let .key(combo) = button.action { InputSynth.post(combo) }
             self?.hide()
         }
         panel.contentView = view
         panel.orderFrontRegardless()
+
         self.panel = panel
         self.radialView = view
+        self.panelOrigin = origin
     }
 
-    /// Route a global click (from the event tap) into the radial for hit-testing.
-    func handleClick(atGlobalPoint global: CGPoint) {
-        guard let screen = NSScreen.main, let view = radialView else { return }
-        let local = CGPoint(x: global.x - screen.frame.minX,
-                            y: screen.frame.height - (global.y - screen.frame.minY))
-        view.selectButton(at: local)
-    }
-
-    /// Hit-test at the given global point; fire the button if one is hit; then always hide.
-    func selectAndHide(atGlobalPoint global: CGPoint) {
-        handleClick(atGlobalPoint: global)  // fires onSelect (which posts the combo) if a button was hit
-        hide()                              // always hide, even on a dead-zone miss
+    /// Hit-test at the given CG-global release point; fire the button if one is hit;
+    /// then always hide. Hit-testing is pure math (sectors extend beyond the panel),
+    /// so a release outside the small panel still selects correctly.
+    func selectAndHide(atGlobalPoint cgPoint: CGPoint) {
+        defer { hide() }
+        guard let view = radialView else { return }
+        let cocoa = Coords.cocoaGlobal(fromCG: cgPoint)
+        let viewPoint = CGPoint(x: cocoa.x - panelOrigin.x, y: cocoa.y - panelOrigin.y)
+        view.selectButton(at: viewPoint)
     }
 
     func hide() {
