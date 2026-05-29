@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenshot: ScreenshotController?
     private var textButtons: TextButtonsController?
     private var axPollTimer: Timer?
+    private var onboarding: OnboardingController?
     private var lastSelectedText: String = ""
     private var autoCopyOnHighlight = Settings.current.autoCopyOnHighlight
     private var autoCopyItem: NSMenuItem?
@@ -33,18 +34,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit Whisker", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
 
-        if !Permissions.accessibilityGranted(prompt: true) {
-            let alert = NSAlert()
-            alert.messageText = "Whisker needs Accessibility access"
-            alert.informativeText = "Enable Whisker under Privacy & Security ▸ Accessibility, then relaunch."
-            alert.addButton(withTitle: "Open Settings")
-            alert.addButton(withTitle: "Quit")
-            if alert.runModal() == .alertFirstButtonReturn {
-                Permissions.openAccessibilitySettings()
-            }
-            NSApp.terminate(nil)
-            return
+        if Permissions.accessibilityGranted(prompt: false) {
+            startServices()
+        } else {
+            onboarding = OnboardingController { [weak self] in self?.startServices() }
+            onboarding?.show()
         }
+    }
+
+    /// Creates and starts every Accessibility-dependent service: the overlay/screenshot
+    /// controllers, the CGEventTap, the floating text-edit buttons, and the AX poll timer.
+    /// Idempotent — guarded on `eventTap` so the onboarding poll (or a second call) can't
+    /// spin up a second tap/timer.
+    private func startServices() {
+        guard eventTap == nil else { return }   // idempotent
 
         let overlay = OverlayController()
         let screenshot = ScreenshotController()
@@ -214,16 +217,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Packaged .app: the raw PNG is copied into Contents/Resources by build-dmg.sh,
         // so Bundle.main finds it directly (and the .app stays code-signable). This is
         // the path that resolves in the signed, drag-installed build.
-        if let url = Bundle.main.url(forResource: "whisker", withExtension: "png") {
+        if let url = Bundle.main.url(forResource: "menubar", withExtension: "png") {
             img = NSImage(contentsOf: url)
         }
         // SwiftPM dev runs (`swift run`): the resource lives in Bundle.module.
-        if img == nil, let url = Bundle.module.url(forResource: "whisker", withExtension: "png") {
+        if img == nil, let url = Bundle.module.url(forResource: "menubar", withExtension: "png") {
             img = NSImage(contentsOf: url)
         }
         // Last-ditch dev fallback: load from the user's Pictures folder.
         if img == nil {
-            img = NSImage(contentsOfFile: ("~/Pictures/pfp/whisker.png" as NSString).expandingTildeInPath)
+            img = NSImage(contentsOfFile: ("~/Pictures/pfp/whiskericon_nobg.png" as NSString).expandingTildeInPath)
         }
         guard let base = img else { return nil }
         let size = NSSize(width: 18, height: 18)

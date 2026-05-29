@@ -17,16 +17,18 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Whisker"
 
 # Icon
-scripts/make-icns.sh "/Users/huiyunlee/Pictures/pfp/whisker.png" "$APP/Contents/Resources/AppIcon.icns"
+scripts/make-icns.sh "Sources/Whisker/Resources/appicon.png" "$APP/Contents/Resources/AppIcon.icns"
 
 # Info.plist
 cp Info.plist "$APP/Contents/Info.plist"
 
-# Menu-bar icon source. The app loads this via Bundle.main (Contents/Resources) in the
+# Icon sources. The app loads these via Bundle.main (Contents/Resources) in the
 # packaged build — this is what resolves in the signed, drag-installed .app. (Bundle.module
 # can't be used here: its generated accessor looks for the resource bundle at the .app root,
 # and macOS forbids non-Contents items at the bundle root, which breaks code signing.)
-cp Sources/Whisker/Resources/whisker.png "$APP/Contents/Resources/whisker.png"
+# menubar.png = transparent status-item icon; appicon.png = Dock/onboarding icon.
+cp Sources/Whisker/Resources/menubar.png "$APP/Contents/Resources/menubar.png"
+cp Sources/Whisker/Resources/appicon.png "$APP/Contents/Resources/appicon.png"
 
 # Also include the SwiftPM resource bundle under Contents/Resources (the canonical,
 # code-signable location). Harmless if Bundle.module never reads it.
