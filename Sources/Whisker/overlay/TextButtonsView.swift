@@ -16,22 +16,61 @@ final class TextButtonsView: NSView {
     init(buttons: [TextEditButton]) { self.buttons = buttons; super.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError() }
 
+    /// SF Symbol name for each text-edit button.
+    private static func symbolName(for b: TextEditButton) -> String {
+        switch b {
+        case .deleteChar, .deleteSelection: return "delete.left"
+        case .cut:   return "scissors"
+        case .copy:  return "doc.on.doc"
+        case .paste: return "doc.on.clipboard"
+        }
+    }
+
+    /// Accessible label for fallback rendering when a symbol is unavailable.
+    private static func fallbackLabel(for b: TextEditButton) -> String {
+        switch b {
+        case .deleteChar, .deleteSelection: return "Delete"
+        case .cut:   return "Cut"
+        case .copy:  return "Copy"
+        case .paste: return "Paste"
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         rects = []
+        let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
         for (i, b) in buttons.enumerated() {
             let rect = NSRect(x: CGFloat(i) * 44, y: 0, width: 40, height: 40)
             rects.append((b, rect))
             NSColor(white: 0.1, alpha: 0.85).setFill()
             NSBezierPath(ovalIn: rect).fill()
-            let label: String
-            switch b {
-            case .deleteChar, .deleteSelection: label = "🗑"
-            case .cut: label = "✂️"
-            case .copy: label = "⧉"
-            case .paste: label = "📋"
+
+            let symbol = Self.symbolName(for: b)
+            let accLabel = Self.fallbackLabel(for: b)
+            if let raw = NSImage(systemSymbolName: symbol, accessibilityDescription: accLabel),
+               let glyph = raw.withSymbolConfiguration(config) {
+                let size = glyph.size
+                let tinted = NSImage(size: size, flipped: false) { dstRect in
+                    glyph.draw(in: dstRect)
+                    NSColor.white.set()
+                    dstRect.fill(using: .sourceAtop)
+                    return true
+                }
+                let glyphRect = NSRect(x: rect.midX - size.width / 2,
+                                       y: rect.midY - size.height / 2,
+                                       width: size.width,
+                                       height: size.height)
+                tinted.draw(in: glyphRect)
+            } else {
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .foregroundColor: NSColor.white,
+                    .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                ]
+                let s = NSAttributedString(string: accLabel, attributes: attrs)
+                let size = s.size()
+                s.draw(at: NSPoint(x: rect.midX - size.width / 2,
+                                   y: rect.midY - size.height / 2))
             }
-            NSAttributedString(string: label, attributes: [.font: NSFont.systemFont(ofSize: 16)])
-                .draw(at: NSPoint(x: rect.midX - 9, y: rect.midY - 10))
         }
     }
 
@@ -45,6 +84,10 @@ final class TextButtonsView: NSView {
 final class TextButtonsController {
     private var panel: NSPanel?
     private var shownButtons: [TextEditButton] = []
+    /// Last anchor point we positioned the panel at. We only reposition when the
+    /// cursor moves outside an 8-pt hysteresis window — otherwise every AX poll
+    /// would call setFrame, triggering redraw churn at the cursor.
+    private var lastAnchor: CGPoint?
     var onTap: ((TextEditButton) -> Void)?
 
     /// Show the given button set anchored just ABOVE the given screen point (Cocoa coords, bottom-left origin).
@@ -65,12 +108,18 @@ final class TextButtonsController {
             p.orderFrontRegardless()
             panel = p
             shownButtons = buttons
+            lastAnchor = point
         } else {
+            if let last = lastAnchor,
+               abs(point.x - last.x) <= 8, abs(point.y - last.y) <= 8 {
+                return   // within hysteresis, no reposition
+            }
             panel?.setFrame(frame, display: true)
+            lastAnchor = point
         }
     }
 
     func hide() {
-        panel?.orderOut(nil); panel = nil; shownButtons = []
+        panel?.orderOut(nil); panel = nil; shownButtons = []; lastAnchor = nil
     }
 }
