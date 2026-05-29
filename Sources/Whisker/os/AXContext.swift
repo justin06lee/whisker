@@ -1,30 +1,28 @@
 import ApplicationServices
 import CoreGraphics
 
-/// Reads the system-wide focused UI element and its text selection via the
-/// Accessibility API.
+/// Reads the system-wide focused UI element, its text selection, and the screen
+/// rect of the caret/selection via the Accessibility API.
 ///
-/// Editable-text detection is intentionally broad: an element counts as a text
-/// field if its AX role is one of the known text roles (`AXTextField`,
-/// `AXTextArea`, `AXComboBox`, `AXSearchField`) OR it exposes editable-text
-/// attributes — specifically an `AXSelectedTextRange` together with an `AXValue`
-/// or `AXSelectedText`. Browser tabs, web inputs, Electron apps, and
-/// `contenteditable` fields frequently report nonstandard roles (or focus lands
-/// on an `AXWebArea`) yet still expose those text attributes; the strict
-/// role-only check made the floating buttons vanish permanently in those
-/// contexts. Tradeoff: the heuristic may occasionally false-positive on some web
-/// areas that expose a selection range without being truly editable. That is
-/// accepted to avoid the buttons disappearing in browsers/Electron.
+/// Text-field detection is intentionally broad: known text roles
+/// (AXTextField/AXTextArea/AXComboBox/AXSearchField) OR any element exposing a
+/// text-control attribute (AXSelectedTextRange / AXInsertionPointLineNumber /
+/// AXNumberOfCharacters). This biases toward showing the edit buttons in more
+/// places (Terminal, web/native inputs) at the cost of occasional false-positives
+/// on non-editable text areas — preferred over the buttons silently not appearing.
 ///
-/// AX attribute/role constants (`kAXFocusedUIElementAttribute`, `kAXRoleAttribute`,
-/// `kAXSelectedTextAttribute`, `kAXTextFieldRole`, `kAXTextAreaRole`) are global
-/// `var CFString`s in the SDK, which Swift 6 strict concurrency rejects as shared
-/// mutable state (the same issue `Permissions` hit with `kAXTrustedCheckOptionPrompt`).
-/// We use their documented, stable string-literal values instead.
+/// The caret rect comes from the `AXBoundsForRange` parameterized attribute applied
+/// to the current selected-text range (zero-length range => caret rect). Apps that
+/// don't implement it (e.g. canvas-based editors like Google Docs) yield a nil rect.
+///
+/// AX attribute/role constants are global `var CFString`s the SDK exposes, which
+/// Swift 6 strict concurrency rejects as shared mutable state; we use their stable
+/// string-literal values instead (same approach as Permissions).
 enum AXContext {
     struct Focus: Equatable {
         let isTextField: Bool
-        let selectedText: String   // empty if none
+        let selectedText: String      // empty if none
+        let caretRect: CGRect?        // screen rect (CG global, top-left origin) of caret/selection; nil if unavailable
         var hasSelection: Bool { !selectedText.isEmpty }
     }
 
@@ -33,7 +31,7 @@ enum AXContext {
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(system, "AXFocusedUIElement" as CFString, &focused) == .success,
               let element = focused else {
-            return Focus(isTextField: false, selectedText: "")
+            return Focus(isTextField: false, selectedText: "", caretRect: nil)
         }
         let el = element as! AXUIElement
 
@@ -45,22 +43,40 @@ enum AXContext {
         AXUIElementCopyAttributeValue(el, "AXSelectedText" as CFString, &selRef)
         let selected = (selRef as? String) ?? ""
 
+        // --- broad text detection ---
         let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
         var isText = textRoles.contains(role)
-
+        var attrNames: [String] = []
+        var namesRef: CFArray?
+        if AXUIElementCopyAttributeNames(el, &namesRef) == .success, let arr = namesRef as? [String] {
+            attrNames = arr
+        }
         if !isText {
-            // Web / Electron / contenteditable inputs often report nonstandard roles but still
-            // expose an editable-text selection range. Treat presence of AXSelectedTextRange
-            // (plus a value/selected-text attribute) as an editable text field.
-            var namesRef: CFArray?
-            if AXUIElementCopyAttributeNames(el, &namesRef) == .success,
-               let attrs = namesRef as? [String],
-               attrs.contains("AXSelectedTextRange"),
-               attrs.contains("AXValue") || attrs.contains("AXSelectedText") {
+            if attrNames.contains("AXSelectedTextRange")
+                || attrNames.contains("AXInsertionPointLineNumber")
+                || attrNames.contains("AXNumberOfCharacters") {
                 isText = true
             }
         }
 
-        return Focus(isTextField: isText, selectedText: selected)
+        // --- caret rect via AXBoundsForRange on the selected range ---
+        var caretRect: CGRect? = nil
+        if isText, attrNames.contains("AXSelectedTextRange") {
+            var rangeRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(el, "AXSelectedTextRange" as CFString, &rangeRef) == .success,
+               let rangeVal = rangeRef, CFGetTypeID(rangeVal) == AXValueGetTypeID() {
+                let axRange = rangeVal as! AXValue
+                var boundsRef: CFTypeRef?
+                if AXUIElementCopyParameterizedAttributeValue(el, "AXBoundsForRange" as CFString, axRange, &boundsRef) == .success,
+                   let boundsVal = boundsRef, CFGetTypeID(boundsVal) == AXValueGetTypeID() {
+                    var rect = CGRect.zero
+                    if AXValueGetValue(boundsVal as! AXValue, .cgRect, &rect) {
+                        caretRect = rect
+                    }
+                }
+            }
+        }
+
+        return Focus(isTextField: isText, selectedText: selected, caretRect: caretRect)
     }
 }
