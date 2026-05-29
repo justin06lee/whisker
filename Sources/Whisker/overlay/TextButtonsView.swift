@@ -112,6 +112,20 @@ final class TextButtonsController {
         v.onTap = { [weak self] b in self?.onTap?(b) }
         p.contentView = v
         p.orderFrontRegardless()
+
+        // Fade in on first appearance / button-set change only (not on caret-tracking
+        // repositions, which take the early-return setFrame branch above). A pure
+        // alpha fade is used deliberately: animating layer.anchorPoint to center for a
+        // scale-in shifts a view-backed layer and can fight AppKit's frame-driven
+        // layout, causing the buttons to drift. A clean fade with zero positional
+        // drift is preferable here, so the scale is intentionally dropped.
+        p.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.14
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            p.animator().alphaValue = 1
+        }
+
         panel = p
         shownButtons = buttons
     }

@@ -127,6 +127,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return Self.terminalHints.contains { b.contains($0) }
     }
 
+    private func pointOnAnyScreen(_ p: CGPoint) -> Bool {
+        NSScreen.screens.contains { $0.frame.contains(p) }
+    }
+
     @MainActor
     private func applyFocus(_ focus: AXContext.Focus,
                             mouseLocation mouse: CGPoint,
@@ -143,7 +147,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let set: [TextEditButton] = focus.hasSelection
                 ? [.deleteSelection, .cut, .copy]
                 : [.deleteChar, .paste]
-            textButtons?.show(set, atCocoaPoint: anchorPoint(caret: focus.caretRect, fallbackMouse: mouse))
+
+            // Terminals have no reliable caret bounds -> anchor at the mouse.
+            // Otherwise prefer the caret, but only if it maps onto a real screen
+            // (some apps return bogus near-origin rects that land on the primary).
+            let caret = terminal ? nil : focus.caretRect
+            var anchor = anchorPoint(caret: caret, fallbackMouse: mouse)
+            if !pointOnAnyScreen(anchor) {
+                anchor = CGPoint(x: mouse.x, y: mouse.y + 28)
+            }
+            textButtons?.show(set, atCocoaPoint: anchor)
         } else {
             textButtons?.hide()
         }
@@ -186,12 +199,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor @objc private func captureFocusInfo() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             MainActor.assumeIsolated {
-                let info = AXContext.debugSnapshot(
-                    frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+                let bundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                let ax = AXContext.debugSnapshot(frontmostBundleID: bundle)
+                let focus = AXContext.current()
+                let mouse = NSEvent.mouseLocation
+                let screens = NSScreen.screens.map { s in
+                    "\(NSStringFromRect(s.frame))\(s.frame.origin == .zero ? " [primary]" : "")"
+                }.joined(separator: "  |  ")
+                let caretLine: String
+                if let r = focus.caretRect {
+                    let cocoa = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.minY))
+                    caretLine = "caretCG=\(NSStringFromRect(r))  caretCocoa=\(NSStringFromPoint(cocoa))  onScreen=\(NSScreen.screens.contains { $0.frame.contains(cocoa) })"
+                } else {
+                    caretLine = "caretCG=nil"
+                }
+                let extra = """
+
+                primaryHeight=\(Coords.primaryHeight())
+                mouseCocoa=\(NSStringFromPoint(mouse))
+                screens=\(screens)
+                \(caretLine)
+                """
                 let pb = NSPasteboard.general
                 pb.clearContents()
-                pb.setString(info, forType: .string)
-                NSSound.beep()   // audible cue that the snapshot was captured + copied
+                pb.setString(ax + extra, forType: .string)
+                NSSound.beep()
             }
         }
     }
