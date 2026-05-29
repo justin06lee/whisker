@@ -31,6 +31,7 @@ struct KeyCombo: Equatable {
 
 struct RadialButton: Equatable {
     let label: String
+    let symbol: String          // SF Symbol name; rendered when available
     let action: RadialButtonAction
 }
 
@@ -48,18 +49,18 @@ struct RadialMenu {
         switch kind {
         case .primary:
             return [
-                RadialButton(label: "Enter",  action: .key(.return)),
-                RadialButton(label: "Escape", action: .key(.escape)),
-                RadialButton(label: "Tab",    action: .key(.tab)),
-                RadialButton(label: "⌘S",     action: .key(.cmd("s"))),
-                RadialButton(label: "⌘F",     action: .key(.cmd("f"))),
-                RadialButton(label: "⌘P",     action: .key(.cmd("p"))),
+                RadialButton(label: "Enter",  symbol: "return",                       action: .key(.return)),
+                RadialButton(label: "Escape", symbol: "escape",                       action: .key(.escape)),
+                RadialButton(label: "Tab",    symbol: "arrow.right.to.line.compact",  action: .key(.tab)),
+                RadialButton(label: "⌘S",     symbol: "square.and.arrow.down",        action: .key(.cmd("s"))),
+                RadialButton(label: "⌘F",     symbol: "magnifyingglass",              action: .key(.cmd("f"))),
+                RadialButton(label: "⌘P",     symbol: "printer",                      action: .key(.cmd("p"))),
             ]
         case .secondary:
             return [
-                RadialButton(label: "⌘T", action: .key(.cmd("t"))),
-                RadialButton(label: "⌘N", action: .key(.cmd("n"))),
-                RadialButton(label: "⌘W", action: .key(.cmd("w"))),
+                RadialButton(label: "⌘T", symbol: "plus.rectangle",         action: .key(.cmd("t"))),
+                RadialButton(label: "⌘N", symbol: "macwindow.badge.plus",   action: .key(.cmd("n"))),
+                RadialButton(label: "⌘W", symbol: "xmark",                  action: .key(.cmd("w"))),
             ]
         }
     }
@@ -106,6 +107,7 @@ final class RadialNSView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let buttons = radialMenu.buttons
         let n = buttons.count
+        let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
         for (i, button) in buttons.enumerated() {
             let angle = 2 * Double.pi * Double(i) / Double(n)
             let cx = radialMenu.center.x + cos(angle) * radialMenu.radius
@@ -113,13 +115,33 @@ final class RadialNSView: NSView {
             let rect = NSRect(x: cx - 26, y: cy - 26, width: 52, height: 52)
             NSColor(white: 0.1, alpha: 0.85).setFill()
             NSBezierPath(ovalIn: rect).fill()
-            let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.white,
-                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            ]
-            let s = NSAttributedString(string: button.label, attributes: attrs)
-            let size = s.size()
-            s.draw(at: NSPoint(x: cx - size.width/2, y: cy - size.height/2))
+
+            // Draw the SF Symbol centred, tinted white via sourceAtop fill.
+            // Falls back to the label string if the symbol fails to load.
+            if let raw = NSImage(systemSymbolName: button.symbol,
+                                 accessibilityDescription: button.label),
+               let glyph = raw.withSymbolConfiguration(config) {
+                let size = glyph.size
+                let tinted = NSImage(size: size, flipped: false) { dstRect in
+                    glyph.draw(in: dstRect)
+                    NSColor.white.set()
+                    dstRect.fill(using: .sourceAtop)
+                    return true
+                }
+                let glyphRect = NSRect(x: cx - size.width / 2,
+                                       y: cy - size.height / 2,
+                                       width: size.width,
+                                       height: size.height)
+                tinted.draw(in: glyphRect)
+            } else {
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .foregroundColor: NSColor.white,
+                    .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                ]
+                let s = NSAttributedString(string: button.label, attributes: attrs)
+                let size = s.size()
+                s.draw(at: NSPoint(x: cx - size.width/2, y: cy - size.height/2))
+            }
         }
     }
 

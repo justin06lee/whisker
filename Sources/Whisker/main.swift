@@ -87,31 +87,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // statically main-actor-isolated under Swift 6. `MainActor.assumeIsolated`
         // recovers that isolation; it is sound here because the timer is scheduled
         // on the main run loop (same technique used in EventTap's C trampoline).
+        //
+        // We snapshot `NSEvent.mouseLocation` on the main thread (AppKit state is
+        // main-actor-isolated under Swift 6; reading it here pairs the mouse coord
+        // with a consistent baseline anyway) and then dispatch the synchronous AX
+        // read to a background queue. AX queries are cross-process IPC and can
+        // stall tens of ms each; keeping them off the main thread is the primary
+        // fix for cursor-area jank. UI mutation hops back to the main thread.
+        let axQueue = DispatchQueue(label: "whisker.ax", qos: .userInitiated)
         axPollTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                let focus = AXContext.current()
-
-                // Auto-copy on a newly-appeared non-empty selection.
-                if self.autoCopyOnHighlight, focus.hasSelection, focus.selectedText != self.lastSelectedText {
-                    let pb = NSPasteboard.general
-                    pb.clearContents()
-                    pb.setString(focus.selectedText, forType: .string)
-                }
-                self.lastSelectedText = focus.selectedText
-
-                // Show/hide the floating buttons.
-                if focus.isTextField {
-                    let set: [TextEditButton] = focus.hasSelection
-                        ? [.deleteSelection, .cut, .copy]
-                        : [.deleteChar, .paste]
-                    let mouse = NSEvent.mouseLocation   // Cocoa coords (bottom-left), already global
-                    self.textButtons?.show(set, atCocoaPoint: mouse)
-                } else {
-                    self.textButtons?.hide()
+                guard self != nil else { return }
+                let mouse = NSEvent.mouseLocation   // main-thread snapshot
+                axQueue.async {
+                    let focus = AXContext.current() // off-main: cross-process AX IPC
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            self?.applyFocus(focus, mouseLocation: mouse)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    @MainActor
+    private func applyFocus(_ focus: AXContext.Focus, mouseLocation mouse: CGPoint) {
+        // Auto-copy on a newly-appeared non-empty selection.
+        if autoCopyOnHighlight, focus.hasSelection, focus.selectedText != lastSelectedText {
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(focus.selectedText, forType: .string)
+        }
+        lastSelectedText = focus.selectedText
+
+        // Show/hide the floating buttons.
+        if focus.isTextField {
+            let set: [TextEditButton] = focus.hasSelection
+                ? [.deleteSelection, .cut, .copy]
+                : [.deleteChar, .paste]
+            textButtons?.show(set, atCocoaPoint: mouse)
+        } else {
+            textButtons?.hide()
+        }
+    }
+
+    // Defensive: even though Whisker has no persistent windows today, this keeps
+    // the app alive if a transient window (alert, future settings sheet) is closed.
+    // Cmd+Q from the Dock still terminates normally.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
     }
 
     @MainActor @objc private func toggleAutoCopy() {
@@ -126,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 let app = NSApplication.shared
-app.setActivationPolicy(.accessory) // no Dock icon
+app.setActivationPolicy(.regular) // show in Dock; status item still coexists
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()
