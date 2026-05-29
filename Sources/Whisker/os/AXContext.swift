@@ -81,6 +81,21 @@ enum AXContext {
             }
         }
 
+        if !isText {
+            // Editable value-bearing element (covers some web/Electron inputs), excluding
+            // non-text controls that also have a settable value.
+            let nonText: Set<String> = ["AXSlider", "AXIncrementor", "AXCheckBox",
+                                        "AXRadioButton", "AXPopUpButton", "AXButton",
+                                        "AXMenuButton", "AXStepper", "AXDisclosureTriangle"]
+            if !nonText.contains(role), attrNames.contains("AXValue") {
+                var settable: DarwinBoolean = false
+                if AXUIElementIsAttributeSettable(el, "AXValue" as CFString, &settable) == .success,
+                   settable.boolValue {
+                    isText = true
+                }
+            }
+        }
+
         // --- caret rect via AXBoundsForRange on the selected range ---
         var caretRect: CGRect? = nil
         if isText, attrNames.contains("AXSelectedTextRange") {
