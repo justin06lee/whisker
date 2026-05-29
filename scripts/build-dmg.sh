@@ -35,10 +35,24 @@ if [ -d "$RES_BUNDLE" ]; then
   cp -R "$RES_BUNDLE" "$APP/Contents/Resources/"
 fi
 
-# Ad-hoc codesign so it launches without "damaged" errors on the same machine.
-# Surface failures instead of hiding them — a broken signature is worth knowing about.
-if ! codesign --force --deep --sign - "$APP"; then
-  echo "WARNING: codesign failed (see error above); the app will still run after right-click→Open."
+# Code signing. Prefer a STABLE self-signed identity so macOS keeps the Accessibility
+# grant across rebuilds; fall back to ad-hoc (which forces a re-grant every build).
+# See scripts/make-signing-cert.sh.
+# Check WITHOUT -v: a self-signed cert is usable for signing even though it lists as
+# "not trusted" (which only affects Gatekeeper verification, not signing or TCC matching).
+SIGN_ID="Whisker Self-Signed"
+if security find-identity -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
+  echo "Signing with stable identity '$SIGN_ID' (Accessibility grant persists across rebuilds)…"
+  if ! codesign --force --deep --sign "$SIGN_ID" "$APP"; then
+    echo "WARNING: codesign with '$SIGN_ID' failed (see error above)."
+  fi
+else
+  echo "No stable signing identity ('$SIGN_ID') found."
+  echo "  -> Run scripts/make-signing-cert.sh ONCE to stop macOS re-asking for Accessibility every build."
+  echo "Falling back to ad-hoc signing (Accessibility must be re-granted after each rebuild)."
+  if ! codesign --force --deep --sign - "$APP"; then
+    echo "WARNING: codesign failed (see error above); the app will still run after right-click→Open."
+  fi
 fi
 
 # Assemble DMG staging with an Applications symlink for drag-install.
