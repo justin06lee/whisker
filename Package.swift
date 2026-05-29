@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Whisker",
-            path: "Sources/Whisker"
+            path: "Sources/Whisker",
+            resources: [.copy("Resources/whisker.png")]
         ),
         .testTarget(
             name: "WhiskerTests",

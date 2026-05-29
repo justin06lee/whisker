@@ -14,7 +14,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🐱"
+        if let icon = Self.menuBarIcon() {
+            statusItem.button?.image = icon
+        } else {
+            statusItem.button?.title = "🐱"   // fallback
+        }
 
         let menu = NSMenu()
         let copyItem = NSMenuItem(title: "Auto-copy on highlight",
@@ -193,6 +197,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func quit() { NSApp.terminate(nil) }
+
+    private static func menuBarIcon() -> NSImage? {
+        var img: NSImage?
+        // Packaged .app: the raw PNG is copied into Contents/Resources by build-dmg.sh,
+        // so Bundle.main finds it directly (and the .app stays code-signable). This is
+        // the path that resolves in the signed, drag-installed build.
+        if let url = Bundle.main.url(forResource: "whisker", withExtension: "png") {
+            img = NSImage(contentsOf: url)
+        }
+        // SwiftPM dev runs (`swift run`): the resource lives in Bundle.module.
+        if img == nil, let url = Bundle.module.url(forResource: "whisker", withExtension: "png") {
+            img = NSImage(contentsOf: url)
+        }
+        // Last-ditch dev fallback: load from the user's Pictures folder.
+        if img == nil {
+            img = NSImage(contentsOfFile: ("~/Pictures/pfp/whisker.png" as NSString).expandingTildeInPath)
+        }
+        guard let base = img else { return nil }
+        let size = NSSize(width: 18, height: 18)
+        let resized = NSImage(size: size)
+        resized.lockFocus()
+        base.draw(in: NSRect(origin: .zero, size: size),
+                  from: NSRect(origin: .zero, size: base.size),
+                  operation: .sourceOver, fraction: 1.0)
+        resized.unlockFocus()
+        resized.isTemplate = false   // keep the pfp in color
+        return resized
+    }
 }
 
 let app = NSApplication.shared
