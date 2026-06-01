@@ -48,9 +48,12 @@ final class SwitcherNSView: NSView {
 
     func hit(at viewPoint: CGPoint) -> SwitcherLayout.Hit { layout.hitTest(viewPoint) }
 
-    /// Reposition the glass strip and repaint when content changes.
+    /// Reposition the glass strip and repaint when content changes. The glass
+    /// strip is only shown in our custom dimensions (when there are item tiles);
+    /// Apps mode shows the native ⌘Tab switcher instead, with just the circles.
     private func sync() {
         glass.frame = layout.stripRect
+        glass.isHidden = items.isEmpty
         foreground.needsDisplay = true
     }
 

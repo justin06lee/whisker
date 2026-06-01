@@ -3,41 +3,34 @@ import CoreGraphics
 /// Pure layout + hit-testing for the Switcher HUD, in view-local coordinates
 /// (bottom-left origin, matching the non-flipped overlay view).
 ///
-/// Visual structure (top to bottom): a row of circular category buttons floats
-/// ABOVE a translucent "glass" strip. The strip holds a centered row of item
-/// tiles with the highlighted item's label beneath them.
+/// A row of circular category buttons sits at a FIXED position above the screen
+/// center (so it clears the native ⌘Tab switcher, which Apps mode shows there).
+/// In our custom dimensions (windows/desktops/tabs) a translucent glass strip
+/// with item tiles + label is drawn near center, below the circles.
 struct SwitcherLayout: Equatable {
     enum Hit: Equatable { case category(SwitcherCategory); case item(Int); case none }
 
     let panel: CGSize
     let itemCount: Int
 
-    // Item tiles (app/window/desktop/tab icons). Sized + spaced to match ⌘Tab.
+    // Item tiles. Sized + spaced to match ⌘Tab.
     private let itemSize: CGFloat = 84
     private let itemGap: CGFloat = 22
-    // Glass strip padding around the item row.
     private let stripPadX: CGFloat = 28
     private let stripPadTop: CGFloat = 24
-    private let stripPadBottom: CGFloat = 48   // room for the label under the row
+    private let stripPadBottom: CGFloat = 48
     // Circular category buttons.
     private let catDiameter: CGFloat = 50
     private let catGap: CGFloat = 16
-    private let catStripGap: CGFloat = 18      // gap between category row and strip
+    private let catAboveCenter: CGFloat = 120   // circle-row center, above screen center
 
     private var rowWidth: CGFloat {
         guard itemCount > 0 else { return 0 }
         return CGFloat(itemCount) * itemSize + CGFloat(itemCount - 1) * itemGap
     }
 
-    /// Vertical center of the item row. The whole cluster (categories + strip) is
-    /// centered in the panel; the item row sits a little below panel center to
-    /// leave headroom for the category buttons above the strip.
-    private var itemRowCenterY: CGFloat {
-        let clusterHeight = catDiameter + catStripGap + stripPadTop + itemSize + stripPadBottom
-        let clusterTop = panel.height / 2 + clusterHeight / 2
-        // item row center, measured down from the cluster top.
-        return clusterTop - catDiameter - catStripGap - stripPadTop - itemSize / 2
-    }
+    /// Item row vertical center — just below screen center, under the circles.
+    private var itemRowCenterY: CGFloat { panel.height / 2 - 12 }
 
     var itemRects: [CGRect] {
         guard itemCount > 0 else { return [] }
@@ -49,7 +42,7 @@ struct SwitcherLayout: Equatable {
         }
     }
 
-    /// The translucent glass panel behind the item row + label.
+    /// The translucent glass panel behind the item row + label (custom mode only).
     var stripRect: CGRect {
         let w = max(rowWidth, itemSize) + stripPadX * 2
         let x = (panel.width - w) / 2
@@ -58,12 +51,12 @@ struct SwitcherLayout: Equatable {
         return CGRect(x: x, y: bottom, width: w, height: top - bottom)
     }
 
-    /// Square frames for the circular category buttons, centered above the strip.
+    /// Circular category buttons, centered horizontally at a fixed height.
     var categoryRects: [CGRect] {
         let n = SwitcherCategory.allCases.count
         let rowW = CGFloat(n) * catDiameter + CGFloat(n - 1) * catGap
         let startX = (panel.width - rowW) / 2
-        let y = stripRect.maxY + catStripGap
+        let y = panel.height / 2 + catAboveCenter - catDiameter / 2
         return (0..<n).map { i in
             CGRect(x: startX + CGFloat(i) * (catDiameter + catGap), y: y,
                    width: catDiameter, height: catDiameter)
@@ -71,7 +64,6 @@ struct SwitcherLayout: Equatable {
     }
 
     func hitTest(_ p: CGPoint) -> Hit {
-        // Circular hit-test for the category buttons.
         for (i, r) in categoryRects.enumerated() {
             let dx = p.x - r.midX, dy = p.y - r.midY
             if (dx * dx + dy * dy).squareRoot() <= r.width / 2 {
