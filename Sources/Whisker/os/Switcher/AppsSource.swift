@@ -30,6 +30,6 @@ final class AppsSource: SwitcherSource {
 
     func commit(index: Int) {
         guard apps.indices.contains(index) else { return }
-        apps[index].activate(options: [.activateIgnoringOtherApps])
+        apps[index].activate()
     }
 }

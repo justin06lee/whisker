@@ -36,6 +36,6 @@ final class WindowsSource: SwitcherSource {
         let win = windows[index]
         AXUIElementSetAttributeValue(win, "AXMain" as CFString, kCFBooleanTrue)
         AXUIElementPerformAction(win, "AXRaise" as CFString)
-        owningApp?.activate(options: [.activateIgnoringOtherApps])
+        owningApp?.activate()
     }
 }
