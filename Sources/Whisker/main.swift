@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var eventTap: EventTap?
     private var overlay: OverlayController?
+    private var switcher: SwitcherController?
     private var screenshot: ScreenshotController?
     private var textButtons: TextButtonsController?
     private var axPollTimer: Timer?
@@ -54,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.overlay = overlay
         self.screenshot = screenshot
 
+        let switcher = SwitcherController()
+        self.switcher = switcher
+
         let tap = EventTap(settings: .current) { [weak self] actions in
             guard self != nil else { return }
             for action in actions {
@@ -66,9 +70,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     overlay.hide()
                 case let .selectRadial(at: point):
                     overlay.selectAndHide(atGlobalPoint: point)
-                // TEMP (Task 11 replaces these with real SwitcherController calls):
-                case .openSwitcher, .switcherStep, .switcherClick, .commitSwitcher, .cancelSwitcher:
-                    break
+                case let .openSwitcher(seed):
+                    switcher.open(seed: seed, atGlobalPoint: NSEvent.mouseLocationCG())
+                case let .switcherStep(forward):
+                    switcher.step(forward: forward)
+                case let .switcherClick(at: point):
+                    switcher.click(atGlobalPoint: point)
+                case .commitSwitcher:
+                    switcher.commit()
+                case .cancelSwitcher:
+                    switcher.cancel()
                 case let .commandClick(at: point):
                     InputSynth.modifiedClick(at: point, command: true, shift: false)
                 case let .shiftClick(at: point):
@@ -242,6 +253,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the white glyph is invisible on a light menu bar.
         resized.isTemplate = true
         return resized
+    }
+}
+
+extension NSEvent {
+    /// Current mouse location in CG-global (top-left origin) coordinates.
+    @MainActor
+    static func mouseLocationCG() -> CGPoint {
+        let m = NSEvent.mouseLocation                  // Cocoa-global (bottom-left)
+        return CGPoint(x: m.x, y: Coords.primaryHeight() - m.y)
     }
 }
 
