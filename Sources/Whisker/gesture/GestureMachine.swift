@@ -62,9 +62,9 @@ struct GestureMachine {
             state = .switcherActive
             return [.hideRadial, .openSwitcher(seed: deltaY > 0 ? .apps : .desktops)]
 
-        // HUD open: scroll moves the highlight.
+        // HUD open: scroll moves the highlight (reversed: scroll up = forward).
         case let (.switcherActive, .scrolled(deltaY, _)):
-            return [.switcherStep(forward: deltaY < 0)]
+            return [.switcherStep(forward: deltaY > 0)]
 
         // HUD open: left-click -> controller hit-tests (category button or item).
         case let (.switcherActive, .buttonDown(.left, point, _)):

@@ -36,8 +36,8 @@ private func intoSwitcher(scrollUp: Bool) -> GestureMachine {
 
 @Test func furtherScrollStepsSwitcher() {
     var m = intoSwitcher(scrollUp: true)
-    #expect(m.handle(.scrolled(deltaY: -2, time: 0.4)) == [.switcherStep(forward: true)])
-    #expect(m.handle(.scrolled(deltaY: 5, time: 0.5)) == [.switcherStep(forward: false)])
+    #expect(m.handle(.scrolled(deltaY: -2, time: 0.4)) == [.switcherStep(forward: false)])
+    #expect(m.handle(.scrolled(deltaY: 5, time: 0.5)) == [.switcherStep(forward: true)])
 }
 
 @Test func leftClickWhileSwitcherEmitsSwitcherClick() {
