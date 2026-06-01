@@ -26,14 +26,15 @@ final class SwitcherNSView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
 
-        glass.material = .hudWindow
+        // Light frosted glass like the macOS ⌘Tab switcher (not the dark HUD material).
+        glass.material = .popover
         glass.blendingMode = .behindWindow
         glass.state = .active
         glass.wantsLayer = true
-        glass.layer?.cornerRadius = 22
+        glass.layer?.cornerRadius = 30
         glass.layer?.masksToBounds = true
         glass.layer?.borderWidth = 1
-        glass.layer?.borderColor = NSColor(white: 1, alpha: 0.12).cgColor
+        glass.layer?.borderColor = NSColor(white: 1, alpha: 0.22).cgColor
         addSubview(glass)
 
         foreground.owner = self
@@ -88,9 +89,9 @@ final class SwitcherForeground: NSView {
         for (i, item) in items.enumerated() {
             let r = l.itemRects[i]
             if i == selection {
-                let hl = r.insetBy(dx: -7, dy: -7)
-                NSColor(white: 1, alpha: 0.28).setFill()
-                NSBezierPath(roundedRect: hl, xRadius: 16, yRadius: 16).fill()
+                let hl = r.insetBy(dx: -9, dy: -9)
+                NSColor(white: 1, alpha: 0.5).setFill()
+                NSBezierPath(roundedRect: hl, xRadius: 18, yRadius: 18).fill()
             }
             if let icon = item.icon {
                 icon.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1)
@@ -106,7 +107,7 @@ final class SwitcherForeground: NSView {
             let para = NSMutableParagraphStyle(); para.alignment = .center; para.lineBreakMode = .byTruncatingTail
             let s = NSAttributedString(string: label, attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: NSColor.white,
+                .foregroundColor: NSColor.labelColor,
                 .paragraphStyle: para])
             let sz = s.size()
             let y = first.minY - 8 - sz.height

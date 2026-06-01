@@ -12,17 +12,17 @@ struct SwitcherLayout: Equatable {
     let panel: CGSize
     let itemCount: Int
 
-    // Item tiles (app/window/desktop/tab icons).
-    private let itemSize: CGFloat = 76
-    private let itemGap: CGFloat = 12
+    // Item tiles (app/window/desktop/tab icons). Sized + spaced to match ⌘Tab.
+    private let itemSize: CGFloat = 84
+    private let itemGap: CGFloat = 22
     // Glass strip padding around the item row.
-    private let stripPadX: CGFloat = 22
-    private let stripPadTop: CGFloat = 18
-    private let stripPadBottom: CGFloat = 40   // room for the label under the row
+    private let stripPadX: CGFloat = 28
+    private let stripPadTop: CGFloat = 24
+    private let stripPadBottom: CGFloat = 48   // room for the label under the row
     // Circular category buttons.
     private let catDiameter: CGFloat = 50
     private let catGap: CGFloat = 16
-    private let catStripGap: CGFloat = 16      // gap between category row and strip
+    private let catStripGap: CGFloat = 18      // gap between category row and strip
 
     private var rowWidth: CGFloat {
         guard itemCount > 0 else { return 0 }
