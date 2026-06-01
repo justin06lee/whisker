@@ -5,6 +5,7 @@
 // mutable state and no cross-actor hops — each call creates and posts its events
 // entirely on the calling thread. (Matches the EventTap task's approach.)
 @preconcurrency import CoreGraphics
+import Foundation
 
 enum InputSynth {
     /// Marker stamped on every synthetic event so our own event tap ignores them (prevents feedback loops).
@@ -50,58 +51,36 @@ enum InputSynth {
         up?.post(tap: .cgSessionEventTap)
     }
 
-    private static let controlKey: CGKeyCode = 0x3B   // left Control
-
-    /// Move between Mission Control Spaces by synthesizing Ctrl+Left/Right
-    /// `times` times. Requires the default "Move left/right a space" shortcuts
-    /// to be enabled (System Settings > Keyboard > Shortcuts > Mission Control).
+    /// Move between Mission Control Spaces by `times` Ctrl+Left/Right presses.
     ///
-    /// Two things are needed for this to actually trigger the space switch
-    /// (rather than the focused app beeping at an unhandled Ctrl+arrow):
-    ///  1. Control must be genuinely HELD — a real Control key-down event, not
-    ///     just the `.maskControl` flag on the arrow. We hold it for the whole run.
-    ///  2. Each arrow must be spaced out: the Space transition animates (~0.25s)
-    ///     and arrows fired mid-animation are dropped. So we schedule them.
-    /// Holds a CGEventSource so it can be reused across the (async) key sequence.
-    /// One shared source is REQUIRED: the held-Control modifier state set by the
-    /// control-down event is only visible to subsequent events from the SAME
-    /// source. Using a fresh source per key (as before) meant the arrow events
-    /// didn't "see" Control held, so the WindowServer never recognized the Space
-    /// shortcut and the focused app just beeped.
-    private final class SourceBox: @unchecked Sendable {
-        let src: CGEventSource?
-        init() { src = CGEventSource(stateID: .combinedSessionState) }
-    }
-
+    /// We drive this through AppleScript System Events rather than CGEvent: the
+    /// WindowServer's Spaces symbolic hotkey ignores raw injected CGEvents (they
+    /// fall through to the focused app as a literal Ctrl+arrow keystroke and don't
+    /// switch desktops), whereas a System Events `key code … using control down`
+    /// is delivered in a way that the hotkey actually fires.
+    ///
+    /// Requires the default "Move left/right a space" shortcuts enabled
+    /// (System Settings ▸ Keyboard ▸ Shortcuts ▸ Mission Control). Runs on a
+    /// background queue (the inter-press `delay`s would otherwise block the main
+    /// run loop, which our event tap lives on). First use prompts for Automation.
     static func switchSpace(left: Bool, times: Int) {
         guard times > 0 else { return }
-        let arrow: CGKeyCode = left ? 0x7B : 0x7C   // Left / Right arrow
-        let box = SourceBox()
-
-        // Hold Control down for the whole sequence (one shared source).
-        Self.postKey(box.src, controlKey, down: true, flags: .maskControl)
-
-        let stepGap = 0.32
+        let code = left ? 123 : 124   // Left / Right arrow key codes
+        var src = "tell application \"System Events\"\n"
         for i in 0..<times {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * stepGap) {
-                Self.postKey(box.src, arrow, down: true, flags: .maskControl)
-                Self.postKey(box.src, arrow, down: false, flags: .maskControl)
+            src += "key code \(code) using control down\n"
+            if i < times - 1 { src += "delay 0.35\n" }
+        }
+        src += "end tell\n"
+        let script = src
+        DispatchQueue.global(qos: .userInitiated).async {
+            let s = NSAppleScript(source: script)
+            var err: NSDictionary?
+            s?.executeAndReturnError(&err)
+            if let err {
+                FileHandle.standardError.write(Data("whisker space-switch: \(err)\n".utf8))
             }
         }
-        // Release Control just after the last arrow.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(times) * stepGap + 0.05) {
-            Self.postKey(box.src, controlKey, down: false, flags: [])
-        }
-    }
-
-    /// Post a single key event from a shared source, at the HID tap. The
-    /// WindowServer recognizes Space-switching (Ctrl+arrow) only from HID-level
-    /// events; session-level posts just make the focused app beep.
-    private static func postKey(_ src: CGEventSource?, _ key: CGKeyCode, down: Bool, flags: CGEventFlags) {
-        let e = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: down)
-        e?.flags = flags
-        tag(e)
-        e?.post(tap: .cghidEventTap)
     }
 
     // MARK: - Native ⌘Tab app switcher driving
