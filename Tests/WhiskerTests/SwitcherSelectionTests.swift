@@ -17,3 +17,10 @@ import Testing
     #expect(SwitcherSelection.clamp(-1, count: 3) == 0)
     #expect(SwitcherSelection.clamp(0, count: 0) == 0)
 }
+
+@Test func supportedBrowserDetection() {
+    #expect(TabsSource.supportedBrowser(bundleID: "com.apple.Safari") == .safari)
+    #expect(TabsSource.supportedBrowser(bundleID: "com.google.Chrome") == .chrome)
+    #expect(TabsSource.supportedBrowser(bundleID: "com.foo.Bar") == nil)
+    #expect(TabsSource.supportedBrowser(bundleID: nil) == nil)
+}
