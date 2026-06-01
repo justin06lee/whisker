@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 
 /// Pure selection-index arithmetic for the Switcher (wrap + clamp).
 enum SwitcherSelection {
@@ -30,6 +31,12 @@ final class AppsSource: SwitcherSource {
 
     func commit(index: Int) {
         guard apps.indices.contains(index) else { return }
-        apps[index].activate()
+        let app = apps[index]
+        app.activate()
+        // Cross-Space fix: `activate()` alone doesn't reliably pull an app whose
+        // windows live on another desktop. Setting AXFrontmost makes the window
+        // server switch to the Space holding the app's frontmost window.
+        let ax = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetAttributeValue(ax, "AXFrontmost" as CFString, kCFBooleanTrue)
     }
 }

@@ -1,88 +1,160 @@
 import AppKit
 
-/// Renders the Switcher HUD: a translucent rounded panel with a category bar above
-/// a centered row of item tiles. Source-agnostic — it only knows items, the active
-/// category, which categories are enabled, and the highlighted index. Geometry comes
-/// from SwitcherLayout. Simple fade-in via a short manual animation.
+/// Renders the Switcher HUD to look like the macOS ⌘Tab switcher: a liquid-glass
+/// (blurred) rounded strip holding a centered row of item tiles with the
+/// highlighted item's name beneath it, plus a row of circular category buttons
+/// floating above the strip (styled like the radial menu's buttons).
+///
+/// Structure: a transparent container holds an `NSVisualEffectView` (the glass
+/// strip, bottom) and a transparent `SwitcherForeground` (top) that paints the
+/// icons, label, selection highlight, and category buttons. The whole container
+/// fades in via `alphaValue`.
 @MainActor
 final class SwitcherNSView: NSView {
-    var items: [SwitcherItem] = [] { didSet { needsDisplay = true } }
-    var selection: Int = 0 { didSet { needsDisplay = true } }
-    var activeCategory: SwitcherCategory = .apps { didSet { needsDisplay = true } }
-    var enabledCategories: Set<SwitcherCategory> = Set(SwitcherCategory.allCases) { didSet { needsDisplay = true } }
+    var items: [SwitcherItem] = [] { didSet { sync() } }
+    var selection: Int = 0 { didSet { foreground.needsDisplay = true } }
+    var activeCategory: SwitcherCategory = .apps { didSet { foreground.needsDisplay = true } }
+    var enabledCategories: Set<SwitcherCategory> = Set(SwitcherCategory.allCases) { didSet { foreground.needsDisplay = true } }
 
-    private var opacity: Double = 0
+    private let glass = NSVisualEffectView()
+    private let foreground = SwitcherForeground()
     private var timer: Timer?
 
     override var isFlipped: Bool { false }
 
-    private var layout: SwitcherLayout { SwitcherLayout(panel: bounds.size, itemCount: items.count) }
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+
+        glass.material = .hudWindow
+        glass.blendingMode = .behindWindow
+        glass.state = .active
+        glass.wantsLayer = true
+        glass.layer?.cornerRadius = 22
+        glass.layer?.masksToBounds = true
+        glass.layer?.borderWidth = 1
+        glass.layer?.borderColor = NSColor(white: 1, alpha: 0.12).cgColor
+        addSubview(glass)
+
+        foreground.owner = self
+        foreground.frame = bounds
+        foreground.autoresizingMask = [.width, .height]
+        addSubview(foreground, positioned: .above, relativeTo: glass)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    var layout: SwitcherLayout { SwitcherLayout(panel: bounds.size, itemCount: items.count) }
 
     func hit(at viewPoint: CGPoint) -> SwitcherLayout.Hit { layout.hitTest(viewPoint) }
 
+    /// Reposition the glass strip and repaint when content changes.
+    private func sync() {
+        glass.frame = layout.stripRect
+        foreground.needsDisplay = true
+    }
+
     func fadeIn() {
-        opacity = 0
+        alphaValue = 0
+        sync()
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.opacity = min(1, self.opacity + 0.18)
-                self.needsDisplay = true
-                if self.opacity >= 1 { self.timer?.invalidate(); self.timer = nil }
+                self.alphaValue = min(1, self.alphaValue + 0.2)
+                if self.alphaValue >= 1 { self.timer?.invalidate(); self.timer = nil }
             }
         }
     }
 
     func stopAnimating() { timer?.invalidate(); timer = nil }
+}
+
+/// Transparent foreground that paints item icons, the selection highlight, the
+/// highlighted item's label, and the circular category buttons.
+@MainActor
+final class SwitcherForeground: NSView {
+    weak var owner: SwitcherNSView?
+    override var isFlipped: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }   // never intercept; panel ignores mouse anyway
 
     override func draw(_ dirtyRect: NSRect) {
-        let l = layout
-        guard !items.isEmpty || !l.categoryRects.isEmpty else { return }
+        guard let owner else { return }
+        let l = owner.layout
+        let items = owner.items
+        let selection = owner.selection
 
-        let union = (l.itemRects + l.categoryRects).reduce(CGRect.null) { $0.union($1) }
-            .insetBy(dx: -24, dy: -24)
-        let bg = NSBezierPath(roundedRect: union, xRadius: 22, yRadius: 22)
-        NSColor(white: 0.12, alpha: 0.92 * opacity).setFill()
-        bg.fill()
-
-        let font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        for (i, cat) in SwitcherCategory.allCases.enumerated() {
-            let r = l.categoryRects[i]
-            let enabled = enabledCategories.contains(cat)
-            let isActive = (cat == activeCategory)
-            if isActive {
-                NSColor(white: 1, alpha: 0.18 * opacity).setFill()
-                NSBezierPath(roundedRect: r, xRadius: 8, yRadius: 8).fill()
-            }
-            let alpha = (enabled ? (isActive ? 1.0 : 0.65) : 0.25) * opacity
-            let s = NSAttributedString(string: cat.title, attributes: [
-                .font: font, .foregroundColor: NSColor.white.withAlphaComponent(alpha)])
-            let sz = s.size()
-            s.draw(at: NSPoint(x: r.midX - sz.width/2, y: r.midY - sz.height/2))
-        }
-
+        // Item tiles (real icons). Selected one gets a white rounded highlight,
+        // like the macOS ⌘Tab switcher.
         for (i, item) in items.enumerated() {
             let r = l.itemRects[i]
             if i == selection {
-                NSColor(white: 1, alpha: 0.22 * opacity).setFill()
-                NSBezierPath(roundedRect: r.insetBy(dx: -6, dy: -6), xRadius: 14, yRadius: 14).fill()
+                let hl = r.insetBy(dx: -7, dy: -7)
+                NSColor(white: 1, alpha: 0.28).setFill()
+                NSBezierPath(roundedRect: hl, xRadius: 16, yRadius: 16).fill()
             }
             if let icon = item.icon {
-                icon.draw(in: r, from: .zero, operation: .sourceOver, fraction: opacity)
+                icon.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1)
             } else {
-                let ph = NSBezierPath(roundedRect: r, xRadius: 12, yRadius: 12)
-                NSColor(white: 0.3, alpha: opacity).setFill(); ph.fill()
+                NSColor(white: 0.35, alpha: 1).setFill()
+                NSBezierPath(roundedRect: r, xRadius: 14, yRadius: 14).fill()
             }
         }
 
+        // Highlighted item label, centered under the row inside the strip.
         if items.indices.contains(selection), let first = l.itemRects.first {
             let label = items[selection].label
+            let para = NSMutableParagraphStyle(); para.alignment = .center; para.lineBreakMode = .byTruncatingTail
             let s = NSAttributedString(string: label, attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: NSColor.white.withAlphaComponent(opacity)])
+                .foregroundColor: NSColor.white,
+                .paragraphStyle: para])
             let sz = s.size()
-            let y = first.minY - 10 - sz.height
-            s.draw(at: NSPoint(x: bounds.midX - sz.width/2, y: y))
+            let y = first.minY - 8 - sz.height
+            let maxW = l.stripRect.width - 24
+            let w = min(sz.width, maxW)
+            s.draw(in: NSRect(x: owner.bounds.midX - w / 2, y: y, width: w, height: sz.height))
+        }
+
+        // Circular category buttons above the strip (radial-menu styling).
+        let config = NSImage.SymbolConfiguration(pointSize: 20, weight: .medium)
+        for (i, cat) in SwitcherCategory.allCases.enumerated() {
+            let r = l.categoryRects[i]
+            let enabled = owner.enabledCategories.contains(cat)
+            let isActive = (cat == owner.activeCategory)
+            let circle = NSBezierPath(ovalIn: r)
+
+            // Selected = white fill (like a selected radial button); else dark disc.
+            let baseAlpha: CGFloat = enabled ? 1 : 0.4
+            if isActive {
+                NSColor.white.withAlphaComponent(baseAlpha).setFill()
+            } else {
+                NSColor(white: 0.12, alpha: 0.85 * baseAlpha).setFill()
+            }
+            circle.fill()
+
+            let tint: NSColor = isActive ? NSColor.black : NSColor.white.withAlphaComponent(baseAlpha)
+            drawSymbol(cat.symbolName, fallback: cat.title, in: r, tint: tint, config: config)
+        }
+    }
+
+    private func drawSymbol(_ name: String, fallback: String, in rect: NSRect,
+                            tint: NSColor, config: NSImage.SymbolConfiguration) {
+        if let raw = NSImage(systemSymbolName: name, accessibilityDescription: fallback),
+           let glyph = raw.withSymbolConfiguration(config) {
+            let gs = glyph.size
+            let tinted = NSImage(size: gs, flipped: false) { dst in
+                glyph.draw(in: dst)
+                tint.set()
+                dst.fill(using: .sourceAtop)
+                return true
+            }
+            tinted.draw(in: NSRect(x: rect.midX - gs.width / 2, y: rect.midY - gs.height / 2,
+                                   width: gs.width, height: gs.height))
+        } else {
+            let s = NSAttributedString(string: fallback, attributes: [
+                .foregroundColor: tint, .font: NSFont.systemFont(ofSize: 11, weight: .medium)])
+            let ss = s.size()
+            s.draw(at: NSPoint(x: rect.midX - ss.width / 2, y: rect.midY - ss.height / 2))
         }
     }
 }

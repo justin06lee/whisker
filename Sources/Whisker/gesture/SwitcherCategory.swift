@@ -11,4 +11,14 @@ enum SwitcherCategory: String, Equatable, CaseIterable {
         case .tabs:     return "Tabs"
         }
     }
+
+    /// SF Symbol drawn inside the circular category button.
+    var symbolName: String {
+        switch self {
+        case .apps:     return "square.grid.2x2.fill"
+        case .windows:  return "macwindow"
+        case .desktops: return "squares.below.rectangle"
+        case .tabs:     return "square.on.square"
+        }
+    }
 }

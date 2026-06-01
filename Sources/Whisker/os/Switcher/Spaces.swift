@@ -10,28 +10,60 @@ private func CGSMainConnectionID() -> CGSConnectionID
 @_silgen_name("CGSCopyManagedDisplaySpaces")
 private func CGSCopyManagedDisplaySpaces(_ cid: CGSConnectionID) -> CFArray?
 
-/// Read-only view of Mission Control Spaces for the primary display, via private
-/// CGS APIs. Returns conservative defaults (1 space, index 0) if the private call
-/// fails or its shape changed.
+/// Read-only view of Mission Control Spaces, via private CGS APIs. Returns
+/// conservative defaults (1 space, index 0) if the private call fails or its
+/// shape changed.
+///
+/// `CGSCopyManagedDisplaySpaces` returns one dict per display; each has a
+/// "Spaces" array and a "Current Space" dict. We flatten the user (non-fullscreen)
+/// spaces across all displays in order, matching how Ctrl+←/→ steps between them,
+/// and locate the current one by ManagedSpaceID.
+@MainActor
 enum Spaces {
-    /// (count, currentIndex) for the first managed display.
+    private static var didDump = false
+
     static func snapshot() -> (count: Int, currentIndex: Int) {
         let cid = CGSMainConnectionID()
-        guard let displays = CGSCopyManagedDisplaySpaces(cid) as? [[String: Any]],
-              let first = displays.first,
-              let spaceList = first["Spaces"] as? [[String: Any]] else {
+        guard let raw = CGSCopyManagedDisplaySpaces(cid) as? [Any] else {
+            dumpOnce("CGSCopyManagedDisplaySpaces returned nil/non-array")
             return (1, 0)
         }
-        let count = max(spaceList.count, 1)
 
-        // Current space id lives under "Current Space" -> "ManagedSpaceID".
+        // Flatten user spaces across displays, in order. A space's "type" == 0 is a
+        // standard desktop; fullscreen-app spaces (type 4) are excluded so the
+        // numbering matches the Desktops shown in Mission Control + Ctrl+arrow order.
+        var spaceIDs: [Int] = []
         var currentID: Int?
-        if let cur = first["Current Space"] as? [String: Any] {
-            currentID = (cur["ManagedSpaceID"] as? Int) ?? (cur["id64"] as? Int)
+        for case let display as [String: Any] in raw {
+            if let spaces = display["Spaces"] as? [Any] {
+                for case let s as [String: Any] in spaces {
+                    if let type = s["type"] as? Int, type != 0 { continue }   // skip fullscreen
+                    if let id = (s["ManagedSpaceID"] as? Int) ?? (s["id64"] as? Int) {
+                        spaceIDs.append(id)
+                    }
+                }
+            }
+            if currentID == nil, let cur = display["Current Space"] as? [String: Any] {
+                currentID = (cur["ManagedSpaceID"] as? Int) ?? (cur["id64"] as? Int)
+            }
         }
-        let ids: [Int] = spaceList.map { ($0["ManagedSpaceID"] as? Int) ?? ($0["id64"] as? Int) ?? -1 }
-        let idx = currentID.flatMap { ids.firstIndex(of: $0) } ?? 0
+
+        if spaceIDs.count <= 1 { dumpOnce("parsed \(spaceIDs.count) user space(s)") }
+
+        let count = max(spaceIDs.count, 1)
+        let idx = currentID.flatMap { spaceIDs.firstIndex(of: $0) } ?? 0
         return (count, idx)
+    }
+
+    /// One-time diagnostic dump of the raw CGS structure to stderr, so a
+    /// `swift run Whisker` from a terminal reveals the shape when detection is off.
+    private static func dumpOnce(_ note: String) {
+        guard !didDump else { return }
+        didDump = true
+        let cid = CGSMainConnectionID()
+        let raw = CGSCopyManagedDisplaySpaces(cid)
+        FileHandle.standardError.write(Data(
+            "whisker Spaces: \(note). raw=\(String(describing: raw))\n".utf8))
     }
 }
 
