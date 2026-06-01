@@ -50,9 +50,22 @@ enum InputSynth {
         up?.post(tap: .cgSessionEventTap)
     }
 
-    /// ⌘Tab step. v1 posts a full ⌘-press+Tab each step (good enough for adjacent switching).
-    static func switchApp(forward: Bool) {
-        let combo = KeyCombo(keyCode: 0x30, command: true, shift: !forward) // Tab, +Shift to go back
-        post(combo)
+    /// Move between Mission Control Spaces by synthesizing Ctrl+Left/Right
+    /// `times` times. Requires the default "Move left/right a space" shortcuts
+    /// to be enabled (System Settings > Keyboard > Shortcuts > Mission Control).
+    static func switchSpace(left: Bool, times: Int) {
+        guard times > 0 else { return }
+        let keyCode: CGKeyCode = left ? 0x7B : 0x7C   // Left / Right arrow
+        let src = CGEventSource(stateID: .combinedSessionState)
+        for _ in 0..<times {
+            let down = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true)
+            let up = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false)
+            down?.flags = .maskControl
+            up?.flags = .maskControl
+            down?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
+            up?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
+            down?.post(tap: .cgSessionEventTap)
+            up?.post(tap: .cgSessionEventTap)
+        }
     }
 }
