@@ -188,12 +188,23 @@ v1 includes all four categories: **Apps, Windows, Desktops, Tabs (Safari+Chrome)
 Desktops uses private CGS APIs, isolated in `os/Switcher/Spaces.swift`. Tabs is
 browser-gated and degrades gracefully without Automation permission.
 
-## Open questions (resolve during planning)
+## Resolved decisions
 
-1. Category-button + item click resolution: does the machine stay OS-agnostic by
-   emitting a generic `.switcherClick(at:)` that the controller hit-tests (cleaner
-   separation), or does the controller pre-classify the click and feed
-   `.switcherSetCategory` / `.switcherSelect`? Lean: generic click action from the
-   machine, controller hit-tests — keeps the machine pure and the geometry in one place.
-2. Whether to show per-window thumbnails for the Windows category later (needs
-   screen capture). Out of scope for v1; app icon + title only.
+1. **Click resolution (was open Q1): generic click from the machine.** The state
+   machine emits a single `.switcherClick(at: CGPoint)` on left-click while open;
+   the `SwitcherController` hit-tests the point to either a category button
+   (→ switch category) or an item (→ set selection). Keeps the machine OS-agnostic
+   and all geometry in one place. (Replaces the earlier `.switcherSetCategory` /
+   `.switcherSelect` split in the actions list above.)
+2. **Apps presentation: own HUD styled like ⌘Tab, NOT Apple's system switcher.**
+   The literal system ⌘Tab HUD can't host our category bar, can't be hit-tested by
+   our event tap, and can't be merged with release-to-commit + category switching.
+   So Apps renders in the same custom `SwitcherView` as the other categories,
+   visually mimicking ⌘Tab (row of app icons, highlight, label). Uniform control,
+   uniform interaction across all four categories.
+
+## Out of scope (v1)
+
+- Per-window thumbnails for the Windows category (needs screen capture). App icon
+  + title only.
+- Tabs beyond Safari + Chrome.
