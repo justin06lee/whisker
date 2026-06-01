@@ -66,8 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     overlay.hide()
                 case let .selectRadial(at: point):
                     overlay.selectAndHide(atGlobalPoint: point)
-                case let .switchAppStep(forward):
-                    InputSynth.switchApp(forward: forward)
+                // TEMP (Task 11 replaces these with real SwitcherController calls):
+                case .openSwitcher, .switcherStep, .switcherClick, .commitSwitcher, .cancelSwitcher:
+                    break
                 case let .commandClick(at: point):
                     InputSynth.modifiedClick(at: point, command: true, shift: false)
                 case let .shiftClick(at: point):
@@ -226,7 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Last-ditch dev fallback: load from the user's Pictures folder.
         if img == nil {
-            img = NSImage(contentsOfFile: ("~/Pictures/pfp/whiskericon_nobg.png" as NSString).expandingTildeInPath)
+            img = NSImage(contentsOfFile: ("~/Pictures/pfp/whisker_taskbar.png" as NSString).expandingTildeInPath)
         }
         guard let base = img else { return nil }
         let size = NSSize(width: 18, height: 18)
@@ -236,7 +237,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   from: NSRect(origin: .zero, size: base.size),
                   operation: .sourceOver, fraction: 1.0)
         resized.unlockFocus()
-        resized.isTemplate = false   // keep the pfp in color
+        // Monochrome (white whiskers on transparent) -> template so macOS tints
+        // it to match the menu bar (dark on light, light on dark). Without this
+        // the white glyph is invisible on a light menu bar.
+        resized.isTemplate = true
         return resized
     }
 }
