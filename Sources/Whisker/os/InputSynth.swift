@@ -62,32 +62,42 @@ enum InputSynth {
     ///     just the `.maskControl` flag on the arrow. We hold it for the whole run.
     ///  2. Each arrow must be spaced out: the Space transition animates (~0.25s)
     ///     and arrows fired mid-animation are dropped. So we schedule them.
+    /// Holds a CGEventSource so it can be reused across the (async) key sequence.
+    /// One shared source is REQUIRED: the held-Control modifier state set by the
+    /// control-down event is only visible to subsequent events from the SAME
+    /// source. Using a fresh source per key (as before) meant the arrow events
+    /// didn't "see" Control held, so the WindowServer never recognized the Space
+    /// shortcut and the focused app just beeped.
+    private final class SourceBox: @unchecked Sendable {
+        let src: CGEventSource?
+        init() { src = CGEventSource(stateID: .combinedSessionState) }
+    }
+
     static func switchSpace(left: Bool, times: Int) {
         guard times > 0 else { return }
         let arrow: CGKeyCode = left ? 0x7B : 0x7C   // Left / Right arrow
+        let box = SourceBox()
 
-        // Hold Control down for the whole sequence.
-        postKey(controlKey, down: true, flags: .maskControl)
+        // Hold Control down for the whole sequence (one shared source).
+        Self.postKey(box.src, controlKey, down: true, flags: .maskControl)
 
         let stepGap = 0.32
         for i in 0..<times {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * stepGap) {
-                postKey(arrow, down: true, flags: .maskControl)
-                postKey(arrow, down: false, flags: .maskControl)
+                Self.postKey(box.src, arrow, down: true, flags: .maskControl)
+                Self.postKey(box.src, arrow, down: false, flags: .maskControl)
             }
         }
         // Release Control just after the last arrow.
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(times) * stepGap + 0.05) {
-            postKey(controlKey, down: false, flags: [])
+            Self.postKey(box.src, controlKey, down: false, flags: [])
         }
     }
 
-    /// Post a single key event (its own event source — captures nothing).
-    /// Posted at the HID tap: the WindowServer recognizes Space-switching
-    /// (Ctrl+arrow) only from HID-level events, not session-level ones — posting
-    /// to `.cgSessionEventTap` just makes the focused app beep at an unhandled key.
-    private static func postKey(_ key: CGKeyCode, down: Bool, flags: CGEventFlags) {
-        let src = CGEventSource(stateID: .combinedSessionState)
+    /// Post a single key event from a shared source, at the HID tap. The
+    /// WindowServer recognizes Space-switching (Ctrl+arrow) only from HID-level
+    /// events; session-level posts just make the focused app beep.
+    private static func postKey(_ src: CGEventSource?, _ key: CGKeyCode, down: Bool, flags: CGEventFlags) {
         let e = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: down)
         e?.flags = flags
         tag(e)
