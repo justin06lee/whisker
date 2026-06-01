@@ -50,23 +50,45 @@ enum InputSynth {
         up?.post(tap: .cgSessionEventTap)
     }
 
+    private static let controlKey: CGKeyCode = 0x3B   // left Control
+
     /// Move between Mission Control Spaces by synthesizing Ctrl+Left/Right
     /// `times` times. Requires the default "Move left/right a space" shortcuts
     /// to be enabled (System Settings > Keyboard > Shortcuts > Mission Control).
+    ///
+    /// Two things are needed for this to actually trigger the space switch
+    /// (rather than the focused app beeping at an unhandled Ctrl+arrow):
+    ///  1. Control must be genuinely HELD — a real Control key-down event, not
+    ///     just the `.maskControl` flag on the arrow. We hold it for the whole run.
+    ///  2. Each arrow must be spaced out: the Space transition animates (~0.25s)
+    ///     and arrows fired mid-animation are dropped. So we schedule them.
     static func switchSpace(left: Bool, times: Int) {
         guard times > 0 else { return }
-        let keyCode: CGKeyCode = left ? 0x7B : 0x7C   // Left / Right arrow
-        let src = CGEventSource(stateID: .combinedSessionState)
-        for _ in 0..<times {
-            let down = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true)
-            let up = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false)
-            down?.flags = .maskControl
-            up?.flags = .maskControl
-            down?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
-            up?.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
-            down?.post(tap: .cgSessionEventTap)
-            up?.post(tap: .cgSessionEventTap)
+        let arrow: CGKeyCode = left ? 0x7B : 0x7C   // Left / Right arrow
+
+        // Hold Control down for the whole sequence.
+        postKey(controlKey, down: true, flags: .maskControl)
+
+        let stepGap = 0.32
+        for i in 0..<times {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * stepGap) {
+                postKey(arrow, down: true, flags: .maskControl)
+                postKey(arrow, down: false, flags: .maskControl)
+            }
         }
+        // Release Control just after the last arrow.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(times) * stepGap + 0.05) {
+            postKey(controlKey, down: false, flags: [])
+        }
+    }
+
+    /// Post a single key event (its own event source — captures nothing).
+    private static func postKey(_ key: CGKeyCode, down: Bool, flags: CGEventFlags) {
+        let src = CGEventSource(stateID: .combinedSessionState)
+        let e = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: down)
+        e?.flags = flags
+        tag(e)
+        e?.post(tap: .cgSessionEventTap)
     }
 
     // MARK: - Native ⌘Tab app switcher driving
