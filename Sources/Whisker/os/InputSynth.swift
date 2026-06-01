@@ -83,12 +83,15 @@ enum InputSynth {
     }
 
     /// Post a single key event (its own event source — captures nothing).
+    /// Posted at the HID tap: the WindowServer recognizes Space-switching
+    /// (Ctrl+arrow) only from HID-level events, not session-level ones — posting
+    /// to `.cgSessionEventTap` just makes the focused app beep at an unhandled key.
     private static func postKey(_ key: CGKeyCode, down: Bool, flags: CGEventFlags) {
         let src = CGEventSource(stateID: .combinedSessionState)
         let e = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: down)
         e?.flags = flags
         tag(e)
-        e?.post(tap: .cgSessionEventTap)
+        e?.post(tap: .cghidEventTap)
     }
 
     // MARK: - Native ⌘Tab app switcher driving
