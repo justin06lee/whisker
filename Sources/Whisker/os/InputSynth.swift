@@ -51,38 +51,6 @@ enum InputSynth {
         up?.post(tap: .cgSessionEventTap)
     }
 
-    /// Move between Mission Control Spaces by `times` Ctrl+Left/Right presses.
-    ///
-    /// We drive this through AppleScript System Events rather than CGEvent: the
-    /// WindowServer's Spaces symbolic hotkey ignores raw injected CGEvents (they
-    /// fall through to the focused app as a literal Ctrl+arrow keystroke and don't
-    /// switch desktops), whereas a System Events `key code … using control down`
-    /// is delivered in a way that the hotkey actually fires.
-    ///
-    /// Requires the default "Move left/right a space" shortcuts enabled
-    /// (System Settings ▸ Keyboard ▸ Shortcuts ▸ Mission Control). Runs on a
-    /// background queue (the inter-press `delay`s would otherwise block the main
-    /// run loop, which our event tap lives on). First use prompts for Automation.
-    static func switchSpace(left: Bool, times: Int) {
-        guard times > 0 else { return }
-        let code = left ? 123 : 124   // Left / Right arrow key codes
-        var src = "tell application \"System Events\"\n"
-        for i in 0..<times {
-            src += "key code \(code) using control down\n"
-            if i < times - 1 { src += "delay 0.35\n" }
-        }
-        src += "end tell\n"
-        let script = src
-        DispatchQueue.global(qos: .userInitiated).async {
-            let s = NSAppleScript(source: script)
-            var err: NSDictionary?
-            s?.executeAndReturnError(&err)
-            if let err {
-                FileHandle.standardError.write(Data("whisker space-switch: \(err)\n".utf8))
-            }
-        }
-    }
-
     // MARK: - Native ⌘Tab app switcher driving
     //
     // We show the REAL macOS app switcher (pixel-perfect) by holding ⌘ down and

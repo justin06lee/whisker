@@ -66,6 +66,18 @@ private let p = CGPoint(x: 100, y: 100)
     #expect(out == [.hideRadial, .openSwitcher(seed: .apps)])
 }
 
+@Test func scrollIsInterceptedInCommandAndSwitcherButNotIdle() {
+    var m = GestureMachine(settings: .defaults)
+    #expect(m.isInterceptingScroll == false)                 // idle: scroll passes to the app
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))
+    #expect(m.isInterceptingScroll == true)                  // commandMode: own the scroll
+    _ = m.handle(.scrolled(deltaY: 3, time: 0.2))
+    #expect(m.isInterceptingScroll == true)                  // switcherActive: still own it
+    _ = m.handle(.buttonUp(.right, at: p, time: 0.3))
+    #expect(m.isInterceptingScroll == false)                 // back to idle after commit
+}
+
 @Test func releaseAfterSwitcherCommitsNotSelectsRadial() {
     var m = GestureMachine(settings: .defaults)
     _ = m.handle(.buttonDown(.right, at: p, time: 0.0))

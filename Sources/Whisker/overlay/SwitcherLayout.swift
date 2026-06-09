@@ -13,16 +13,18 @@ struct SwitcherLayout: Equatable {
     let panel: CGSize
     let itemCount: Int
 
-    // Item tiles. Sized + spaced to match ⌘Tab.
-    private let itemSize: CGFloat = 84
-    private let itemGap: CGFloat = 22
-    private let stripPadX: CGFloat = 28
-    private let stripPadTop: CGFloat = 24
-    private let stripPadBottom: CGFloat = 48
-    // Circular category buttons.
+    // Item tiles. Measured from the macOS 26 ⌘Tab switcher (see design spec):
+    // 104pt icons, 30pt gaps, 36pt side padding, symmetric 36/36 top+bottom
+    // (icons vertically centered; label overlays the bottom band). Pill = 176pt.
+    private let itemSize: CGFloat = 104
+    private let itemGap: CGFloat = 30
+    private let stripPadX: CGFloat = 36
+    private let stripPadTop: CGFloat = 36
+    private let stripPadBottom: CGFloat = 36
+    // Circular category buttons (Whisker's own control; not part of ⌘Tab).
     private let catDiameter: CGFloat = 50
     private let catGap: CGFloat = 16
-    private let catAboveCenter: CGFloat = 120   // circle-row center, above screen center
+    private let catAboveCenter: CGFloat = 135   // circle-row center, above screen center
 
     private var rowWidth: CGFloat {
         guard itemCount > 0 else { return 0 }

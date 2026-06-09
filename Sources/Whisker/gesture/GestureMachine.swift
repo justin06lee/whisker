@@ -28,6 +28,16 @@ struct GestureMachine {
         }
     }
 
+    /// True when a scroll-wheel event belongs to Whisker — opening the switcher
+    /// from the radial, or cycling the open switcher — so it must be swallowed and
+    /// never reach the app underneath (otherwise the page scrolls while you pick).
+    var isInterceptingScroll: Bool {
+        switch state {
+        case .commandMode, .commandModeLeftDown, .switcherActive: return true
+        default: return false
+        }
+    }
+
     mutating func handle(_ event: GestureEvent) -> [GestureAction] {
         switch (state, event) {
         case let (.idle, .buttonDown(.right, point, time)):

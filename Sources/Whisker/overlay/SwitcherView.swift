@@ -17,8 +17,14 @@ final class SwitcherNSView: NSView {
     var enabledCategories: Set<SwitcherCategory> = Set(SwitcherCategory.allCases) { didSet { foreground.needsDisplay = true } }
 
     private let glass = NSVisualEffectView()
+    private let tintLayer = CALayer()
     private let foreground = SwitcherForeground()
+    private let shadowLayer = CALayer()
     private var timer: Timer?
+
+    // Panel chrome (from the ⌘Tab design spec). Rounded rect, radius ≈ 0.47 ×
+    // half-height (not a full stadium) — measured from the macOS 26 switcher.
+    static let cornerRadius: CGFloat = 41
 
     override var isFlipped: Bool { false }
 
@@ -26,16 +32,33 @@ final class SwitcherNSView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
 
-        // Light frosted glass like the macOS ⌘Tab switcher (not the dark HUD material).
+        // Soft dark drop shadow behind the strip. Lives on its own layer (the glass
+        // clips to its bounds for the blur/corners, so it can't cast a shadow itself).
+        shadowLayer.shadowColor = NSColor.black.cgColor
+        shadowLayer.shadowOpacity = 0.2
+        shadowLayer.shadowRadius = 16
+        shadowLayer.shadowOffset = CGSize(width: 0, height: -2)
+        layer?.addSublayer(shadowLayer)
+
+        // Light frosted "liquid glass" like the macOS 26 ⌘Tab switcher: a bright
+        // vibrancy material (.popover) that the wallpaper tints through, modeled as
+        // ~white 42% over the backdrop. (.hudWindow darkens instead — wrong era.)
         glass.material = .popover
         glass.blendingMode = .behindWindow
         glass.state = .active
         glass.wantsLayer = true
-        glass.layer?.cornerRadius = 30
+        glass.layer?.cornerRadius = Self.cornerRadius
         glass.layer?.masksToBounds = true
         glass.layer?.borderWidth = 1
-        glass.layer?.borderColor = NSColor(white: 1, alpha: 0.22).cgColor
+        glass.layer?.borderColor = NSColor(white: 1, alpha: 0.5).cgColor
         addSubview(glass)
+
+        // White vibrancy tint riding on top of the blur. .popover alone lets too
+        // much wallpaper saturate through (reads purple); the real switcher is a
+        // whiter frost. ~white 26% pushes it toward that without killing the blur.
+        tintLayer.backgroundColor = NSColor(white: 1, alpha: 0.26).cgColor
+        tintLayer.cornerRadius = Self.cornerRadius
+        glass.layer?.addSublayer(tintLayer)
 
         foreground.owner = self
         foreground.frame = bounds
@@ -52,8 +75,19 @@ final class SwitcherNSView: NSView {
     /// strip is only shown in our custom dimensions (when there are item tiles);
     /// Apps mode shows the native ⌘Tab switcher instead, with just the circles.
     private func sync() {
-        glass.frame = layout.stripRect
+        let strip = layout.stripRect
+        glass.frame = strip
         glass.isHidden = items.isEmpty
+        // Shadow follows the strip; its path is the same rounded rect.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        tintLayer.frame = CGRect(origin: .zero, size: strip.size)
+        shadowLayer.frame = strip
+        shadowLayer.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: strip.size),
+                                        cornerWidth: Self.cornerRadius,
+                                        cornerHeight: Self.cornerRadius, transform: nil)
+        shadowLayer.isHidden = items.isEmpty
+        CATransaction.commit()
         foreground.needsDisplay = true
     }
 
@@ -92,31 +126,48 @@ final class SwitcherForeground: NSView {
         for (i, item) in items.enumerated() {
             let r = l.itemRects[i]
             if i == selection {
-                let hl = r.insetBy(dx: -9, dy: -9)
-                NSColor(white: 1, alpha: 0.5).setFill()
-                NSBezierPath(roundedRect: hl, xRadius: 18, yRadius: 18).fill()
+                // Soft lighter plate clearly larger than the icon (outset 10 → 124,
+                // radius 26), like the macOS 26 switcher's selection on light glass.
+                let hl = r.insetBy(dx: -10, dy: -10)
+                let path = NSBezierPath(roundedRect: hl, xRadius: 26, yRadius: 26)
+                NSColor(white: 1, alpha: 0.6).setFill()
+                path.fill()
             }
+            // Soft drop shadow so icons lift off the frosted glass like the real
+            // switcher (icons otherwise read flat/pasted on).
+            NSGraphicsContext.saveGraphicsState()
+            let sh = NSShadow()
+            sh.shadowColor = NSColor(white: 0, alpha: 0.22)
+            sh.shadowBlurRadius = 5
+            sh.shadowOffset = NSSize(width: 0, height: -2)
+            sh.set()
             if let icon = item.icon {
                 icon.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1)
             } else {
                 NSColor(white: 0.35, alpha: 1).setFill()
                 NSBezierPath(roundedRect: r, xRadius: 14, yRadius: 14).fill()
             }
+            NSGraphicsContext.restoreGraphicsState()
         }
 
-        // Highlighted item label, centered under the row inside the strip.
-        if items.indices.contains(selection), let first = l.itemRects.first {
+        // Highlighted item label, centered UNDER the selected icon (like ⌘Tab),
+        // clamped to stay inside the strip when the icon is near an edge.
+        if items.indices.contains(selection) {
+            let iconRect = l.itemRects[selection]
             let label = items[selection].label
             let para = NSMutableParagraphStyle(); para.alignment = .center; para.lineBreakMode = .byTruncatingTail
             let s = NSAttributedString(string: label, attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: NSColor.labelColor,
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor(white: 0, alpha: 0.8),
                 .paragraphStyle: para])
             let sz = s.size()
-            let y = first.minY - 8 - sz.height
+            let y = iconRect.minY - 4 - sz.height
             let maxW = l.stripRect.width - 24
             let w = min(sz.width, maxW)
-            s.draw(in: NSRect(x: owner.bounds.midX - w / 2, y: y, width: w, height: sz.height))
+            let lo = l.stripRect.minX + 12
+            let hi = l.stripRect.maxX - 12 - w
+            let x = min(max(iconRect.midX - w / 2, lo), hi)
+            s.draw(in: NSRect(x: x, y: y, width: w, height: sz.height))
         }
 
         // Circular category buttons above the strip (radial-menu styling).
