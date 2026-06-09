@@ -58,14 +58,33 @@ private let p = CGPoint(x: 100, y: 100)
     #expect(out == [.selectRadial(at: q)])
 }
 
-@Test func scrollInCommandModeSwitchesApp() {
+@Test func scrollInCommandModeOpensSwitcher() {
     var m = GestureMachine(settings: .defaults)
     _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
     _ = m.handle(.tick(time: 0.151))
-    let down = m.handle(.scrolled(deltaY: -3, time: 0.2))
-    let up   = m.handle(.scrolled(deltaY: 5, time: 0.3))
-    #expect(down == [.switchAppStep(forward: true)])
-    #expect(up == [.switchAppStep(forward: false)])
+    let out = m.handle(.scrolled(deltaY: 3, time: 0.2))
+    #expect(out == [.hideRadial, .openSwitcher(seed: .apps)])
+}
+
+@Test func scrollIsInterceptedInCommandAndSwitcherButNotIdle() {
+    var m = GestureMachine(settings: .defaults)
+    #expect(m.isInterceptingScroll == false)                 // idle: scroll passes to the app
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))
+    #expect(m.isInterceptingScroll == true)                  // commandMode: own the scroll
+    _ = m.handle(.scrolled(deltaY: 3, time: 0.2))
+    #expect(m.isInterceptingScroll == true)                  // switcherActive: still own it
+    _ = m.handle(.buttonUp(.right, at: p, time: 0.3))
+    #expect(m.isInterceptingScroll == false)                 // back to idle after commit
+}
+
+@Test func releaseAfterSwitcherCommitsNotSelectsRadial() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))
+    _ = m.handle(.scrolled(deltaY: 3, time: 0.2))
+    let up = m.handle(.buttonUp(.right, at: CGPoint(x: 50, y: 60), time: 0.3))
+    #expect(up == [.commitSwitcher])
 }
 
 @Test func quickLeftClickInCommandModeIsCommandClick() {
@@ -139,11 +158,11 @@ private let p = CGPoint(x: 100, y: 100)
     #expect(m.isInterceptingLeftClicks == true)             // commandMode
 }
 
-@Test func scrollWhileLeftDownInCommandModeStillSwitchesApp() {
+@Test func scrollWhileLeftDownInCommandModeOpensSwitcher() {
     var m = GestureMachine(settings: .defaults)
     _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
     _ = m.handle(.tick(time: 0.151))
-    _ = m.handle(.buttonDown(.left, at: p, time: 0.2)) // commandModeLeftDown
-    let out = m.handle(.scrolled(deltaY: -2, time: 0.25))
-    #expect(out == [.switchAppStep(forward: true)])
+    _ = m.handle(.buttonDown(.left, at: p, time: 0.2))
+    let out = m.handle(.scrolled(deltaY: 3, time: 0.25))
+    #expect(out == [.hideRadial, .openSwitcher(seed: .apps)])
 }

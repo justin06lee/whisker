@@ -5,6 +5,8 @@ struct GestureMachine {
         case idle
         case rightPending(downAt: CGPoint, downTime: Double)
         case commandMode(originAt: CGPoint)
+        case switcherActive                                    // Switcher HUD open (scroll/click cycle, release commits)
+
         case awaitingSecondRight(at: CGPoint, since: Double)   // first quick tap done; watching for a second
         case secondRightPending(originAt: CGPoint)             // second right is down, not yet released
         case secondaryRadial(originAt: CGPoint)                // Radial 2 visible
@@ -21,7 +23,17 @@ struct GestureMachine {
     /// rather than passed to the app underneath.
     var isInterceptingLeftClicks: Bool {
         switch state {
-        case .commandMode, .commandModeLeftDown, .secondaryRadial: return true
+        case .commandMode, .commandModeLeftDown, .secondaryRadial, .switcherActive: return true
+        default: return false
+        }
+    }
+
+    /// True when a scroll-wheel event belongs to Whisker — opening the switcher
+    /// from the radial, or cycling the open switcher — so it must be swallowed and
+    /// never reach the app underneath (otherwise the page scrolls while you pick).
+    var isInterceptingScroll: Bool {
+        switch state {
+        case .commandMode, .commandModeLeftDown, .switcherActive: return true
         default: return false
         }
     }
@@ -48,8 +60,39 @@ struct GestureMachine {
             state = .idle
             return [.selectRadial(at: point)]
 
+        // First scroll while holding right opens the Switcher HUD. Seed category by
+        // direction: scroll up -> Apps, scroll down -> Desktops. Dismiss the radial
+        // so releasing right commits the switcher instead of mis-firing a radial pick.
         case let (.commandMode, .scrolled(deltaY, _)):
-            return [.switchAppStep(forward: deltaY < 0)]
+            state = .switcherActive
+            return [.hideRadial, .openSwitcher(seed: deltaY > 0 ? .apps : .desktops)]
+
+        // Same entry from the left-held variant (user pressed left then scrolled).
+        case let (.commandModeLeftDown, .scrolled(deltaY, _)):
+            state = .switcherActive
+            return [.hideRadial, .openSwitcher(seed: deltaY > 0 ? .apps : .desktops)]
+
+        // HUD open: scroll moves the highlight (reversed: scroll up = forward).
+        case let (.switcherActive, .scrolled(deltaY, _)):
+            return [.switcherStep(forward: deltaY > 0)]
+
+        // HUD open: left-click -> controller hit-tests (category button or item).
+        case let (.switcherActive, .buttonDown(.left, point, _)):
+            return [.switcherClick(at: point)]
+
+        // HUD open: left-up is consumed (intercepted) but emits nothing.
+        case (.switcherActive, .buttonUp(.left, _, _)):
+            return []
+
+        // HUD open: release right -> commit the highlighted item.
+        case (.switcherActive, .buttonUp(.right, _, _)):
+            state = .idle
+            return [.commitSwitcher]
+
+        // HUD open: any other button (e.g. middle) cancels.
+        case (.switcherActive, .buttonDown(.middle, _, _)):
+            state = .idle
+            return [.cancelSwitcher]
 
         case let (.commandMode(origin), .buttonDown(.left, point, time)):
             state = .commandModeLeftDown(originAt: origin, leftDownAt: point, leftDownTime: time)
@@ -64,9 +107,6 @@ struct GestureMachine {
         case (.commandModeLeftDown, .buttonUp(.right, _, _)):
             state = .idle
             return [.hideRadial]
-
-        case let (.commandModeLeftDown, .scrolled(deltaY, _)):
-            return [.switchAppStep(forward: deltaY < 0)]
 
         // second right-click begins within the double-click window
         case let (.awaitingSecondRight(point, since), .buttonDown(.right, _, time))

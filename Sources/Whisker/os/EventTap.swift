@@ -102,6 +102,7 @@ final class EventTap {
         // the event ARRIVES decides ownership. A left-down in commandMode returns an
         // empty action list yet must still be suppressed.
         let wasInterceptingLeft = machine.isInterceptingLeftClicks
+        let wasInterceptingScroll = machine.isInterceptingScroll
         let actions = machine.handle(gesture)
         if !actions.isEmpty { onActions(actions) }
 
@@ -112,6 +113,8 @@ final class EventTap {
             return true
         case .buttonDown(.left, _, _), .buttonUp(.left, _, _):
             return wasInterceptingLeft || !actions.isEmpty
+        case .scrolled:
+            return wasInterceptingScroll   // swallow scroll while driving the switcher
         default:
             return false
         }
