@@ -41,6 +41,7 @@ struct RadialButton: Equatable {
 
 enum RadialButtonAction: Equatable {
     case key(KeyCombo)
+    case palette          // open the searchable menu-command palette
 }
 
 struct RadialMenu {
@@ -66,6 +67,7 @@ struct RadialMenu {
                 RadialButton(label: "⌘T", symbol: "plus.rectangle",         action: .key(.cmd("t"))),
                 RadialButton(label: "⌘N", symbol: "macwindow.badge.plus",   action: .key(.cmd("n"))),
                 RadialButton(label: "⌘W", symbol: "xmark",                  action: .key(.cmd("w"))),
+                RadialButton(label: "Menu", symbol: "filemenu.and.selection", action: .palette),
             ]
         }
     }

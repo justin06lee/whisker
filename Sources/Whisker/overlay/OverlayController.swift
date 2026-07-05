@@ -7,6 +7,9 @@ final class OverlayController {
     private var radialView: RadialNSView?
     private var screenOrigin: CGPoint = .zero   // Cocoa-global origin of the overlay's screen
 
+    /// Fired when the user picks the palette button on Radial 2.
+    var onPalette: (() -> Void)?
+
     func showRadial(_ kind: RadialKind, atGlobalPoint cgPoint: CGPoint) {
         removePanel()   // immediate replace; no close animation when re-opening
 
@@ -33,8 +36,11 @@ final class OverlayController {
         let menu = RadialMenu(kind: kind, center: viewCenter, radius: 90)
         let view = RadialNSView(menu: menu, screenOrigin: frame.origin)
         view.frame = NSRect(origin: .zero, size: frame.size)
-        view.onSelect = { button in
-            if case let .key(combo) = button.action { InputSynth.post(combo) }
+        view.onSelect = { [weak self] button in
+            switch button.action {
+            case let .key(combo): InputSynth.post(combo)
+            case .palette: self?.onPalette?()
+            }
         }
         panel.contentView = view
         panel.orderFrontRegardless()

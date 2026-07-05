@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventTap: EventTap?
     private var overlay: OverlayController?
     private var switcher: SwitcherController?
+    private var palette: PaletteController?
     private var screenshot: ScreenshotController?
     private var textButtons: TextButtonsController?
     private var axPollTimer: Timer?
@@ -83,6 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let switcher = SwitcherController()
         self.switcher = switcher
+
+        let palette = PaletteController()
+        self.palette = palette
+        overlay.onPalette = { [weak palette] in palette?.open() }
 
         let tap = EventTap(settings: settings) { [weak self] actions in
             guard self != nil else { return }
