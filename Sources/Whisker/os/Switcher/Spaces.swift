@@ -179,7 +179,13 @@ enum Spaces {
 @MainActor
 final class SpacesSource: SwitcherSource {
     let category: SwitcherCategory = .desktops
-    var isAvailable: Bool { true }
+
+    /// False when the private CGS API returned nothing usable (changed/removed on
+    /// a future macOS): the Desktops category greys out instead of showing an
+    /// inert single tile.
+    var isAvailable: Bool {
+        !Spaces.snapshot(displayID: Self.displayUnderMouse()).spaceIDs.isEmpty
+    }
 
     private var count = 1
     private var current = 0
