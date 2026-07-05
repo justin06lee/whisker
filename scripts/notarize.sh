@@ -32,7 +32,11 @@ fi
 [ -d "$APP" ] || { echo "ERROR: $APP not found — run scripts/build-dmg.sh first."; exit 1; }
 
 echo "Re-signing $APP with '$SIGN_ID' (hardened runtime, required for notarization)…"
-codesign --force --deep --options runtime --timestamp --sign "$SIGN_ID" "$APP"
+# --entitlements is required: the hardened runtime blocks Apple Events (used by the
+# Tabs switcher to script browsers) unless com.apple.security.automation.apple-events
+# is granted via scripts/whisker.entitlements.
+codesign --force --deep --options runtime --timestamp \
+  --entitlements scripts/whisker.entitlements --sign "$SIGN_ID" "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
 echo "Rebuilding DMG around the Developer-ID-signed app…"

@@ -30,6 +30,14 @@ import Foundation
 @MainActor
 final class EventTap {
     private var machine: GestureMachine
+    // Whether the most recent left-down was swallowed. The machine can change
+    // state between a left-down and its matching left-up (tick transitions,
+    // right-up commits), so deciding each half independently would hand the app
+    // unbalanced pairs — a stuck-down button or an orphan up. The up and any
+    // drags in between must follow the down's decision. Deliberately NOT reset
+    // in `apply(settings:)`: the flag tracks the physical button pair, which
+    // outlives a machine rebuild.
+    private var swallowedLeftDown = false
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var tickTimer: Timer?
@@ -122,14 +130,33 @@ final class EventTap {
             return true   // always consumed; pass-through is re-synthesized on .passThroughRightClick
         case .buttonDown(.middle, _, _), .buttonUp(.middle, _, _):
             return true
-        case .buttonDown(.left, _, _), .buttonUp(.left, _, _):
-            return wasInterceptingLeft || !actions.isEmpty
+        case .buttonDown(.left, _, _):
+            swallowedLeftDown = wasInterceptingLeft || !actions.isEmpty
+            return swallowedLeftDown
+        case .buttonUp(.left, _, _):
+            // Pair the up to its down, regardless of machine state now.
+            defer { swallowedLeftDown = false }
+            return swallowedLeftDown
         case .scrolled:
             return wasInterceptingScroll   // swallow scroll while driving the switcher
         default:
-            // Right-drags are always swallowed: the right-down was already consumed,
-            // so leaking bare drag events would confuse the app underneath.
-            return type == .rightMouseDragged
+            // A drag whose button-down we swallowed must be swallowed too:
+            // leaking bare drag events would confuse the app underneath.
+            switch type {
+            case .rightMouseDragged:
+                return true   // right-down is always consumed
+            case .otherMouseDragged:
+                // Middle (button 2) down is always consumed; buttons 3+ pass
+                // through at down (`translate` ignores them), so their drags must too.
+                return event.getIntegerValueField(.mouseEventButtonNumber) == 2
+            case .leftMouseDragged:
+                // Follows the down's decision, not the machine's current state:
+                // an app-owned left drag already in flight when interception
+                // starts must keep passing through.
+                return swallowedLeftDown
+            default:
+                return false
+            }
         }
     }
 

@@ -21,7 +21,7 @@ The goal: do everything the keyboard does *except typing* without touching the k
 
 ### Switcher HUD
 
-Hold right + scroll opens a ⌘Tab-style HUD with four dimensions. Apps drives the *real* macOS ⌘Tab switcher; Windows lists every regular app's windows (frontmost app first); Desktops jumps Mission Control Spaces with a fast slide (greyed out if the private CGS API ever changes); Tabs lists browser tabs (Safari, Chrome, Edge, Brave, Arc, Vivaldi — needs Automation permission, prompted on first use).
+Hold right + scroll opens a ⌘Tab-style HUD with four dimensions. Apps drives the *real* macOS ⌘Tab switcher; Windows lists every regular app's windows (frontmost app first); Desktops jumps Mission Control Spaces with a fast slide (greyed out if the private CGS API ever changes); Tabs lists browser tabs (Safari, Chrome, Edge, Brave, Arc, Vivaldi — needs the **Automation** permission: the packaged app declares `NSAppleEventsUsageDescription` in its Info.plist so macOS shows the consent prompt on first use; if you ever denied it, re-enable Whisker under Privacy & Security ▸ Automation).
 
 ### Command palette
 

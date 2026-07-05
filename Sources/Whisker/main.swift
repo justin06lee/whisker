@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenshot: ScreenshotController?
     private var textButtons: TextButtonsController?
     private var axPollTimer: Timer?
+    private var axPollInFlight = false
     private var onboarding: OnboardingController?
     private var lastSelectedText: String = ""
     private var settings = Settings.current
@@ -166,15 +167,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // thread is the primary fix for cursor-area jank. UI mutation hops back to the
         // main thread. The poll only needs the caret-bearing `Focus`; no mouse/bundle/
         // pid snapshots (those fallbacks were deleted — `captureFocusInfo` keeps its own).
+        //
+        // `axPollInFlight` caps the serial queue at one pending read: if the focused
+        // app's AX server stalls (a beachballing app can block each call for seconds),
+        // ticks are dropped instead of piling work items behind the stalled read and
+        // replaying a burst of stale Focus snapshots when it recovers.
         let axQueue = DispatchQueue(label: "whisker.ax", qos: .userInitiated)
         axPollTimer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard self != nil else { return }
+                guard let self, !self.axPollInFlight else { return }
+                self.axPollInFlight = true
                 axQueue.async {
                     let focus = AXContext.current() // off-main: cross-process AX IPC
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
-                            self?.applyFocus(focus)
+                            self.axPollInFlight = false
+                            self.applyFocus(focus)
                         }
                     }
                 }
@@ -212,7 +220,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Returns nil if there is no caret or it doesn't land on a real screen.
     private func caretAnchor(_ caret: CGRect?, hasSelection: Bool) -> CGPoint? {
         guard let r = caret else { return nil }
-        let panelW = CGFloat(hasSelection ? 3 : 2) * 44
         let panelH: CGFloat = 40
         let gap: CGFloat = hasSelection ? 10 : 4   // selection sits slightly higher
         let top = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.minY))
@@ -222,8 +229,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let bottom = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.maxY))
             y = bottom.y - gap - panelH                          // place just below the line
         }
-        _ = panelW
         return CGPoint(x: top.x, y: y)
+    }
+
+    // If Whisker quits while a native ⌘Tab switcher session is live, ⌘ is still
+    // synthetically held (InputSynth.commandDown) and nothing else would release
+    // it — the system switcher would stay up with ⌘ stuck. Posting commandUp is
+    // harmless when ⌘ isn't held, so release unconditionally.
+    func applicationWillTerminate(_ notification: Notification) {
+        InputSynth.commandUp()
     }
 
     // Defensive: even though Whisker has no persistent windows today, this keeps
@@ -335,10 +349,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SwiftPM dev runs (`swift run`): the resource lives in Bundle.module.
         if img == nil, let url = Bundle.module.url(forResource: "menubar", withExtension: "png") {
             img = NSImage(contentsOf: url)
-        }
-        // Last-ditch dev fallback: load from the user's Pictures folder.
-        if img == nil {
-            img = NSImage(contentsOfFile: ("~/Pictures/pfp/whisker_taskbar.png" as NSString).expandingTildeInPath)
         }
         guard let base = img else { return nil }
         let size = NSSize(width: 18, height: 18)

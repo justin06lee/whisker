@@ -101,6 +101,17 @@ final class TabsSource: SwitcherSource {
     private func promptForAutomationOnce() {
         guard !Self.didPromptAutomation else { return }
         Self.didPromptAutomation = true
+        // items() runs synchronously inside the CGEventTap callback (via
+        // SwitcherController.enter). Running a modal loop there stalls the tap
+        // until macOS disables it (tapDisabledByTimeout) and re-enters event
+        // processing beneath this frame, so defer the alert out of this stack.
+        Task { @MainActor in
+            Self.presentAutomationAlert()
+        }
+    }
+
+    @MainActor
+    private static func presentAutomationAlert() {
         let alert = NSAlert()
         alert.messageText = "Whisker needs Automation access to list browser tabs"
         alert.informativeText = "Allow Whisker to control your browser in System Settings ▸ Privacy & Security ▸ Automation."

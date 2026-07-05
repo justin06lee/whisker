@@ -85,17 +85,18 @@ struct GestureMachine {
         // First scroll while holding right opens the Switcher HUD. Seed category by
         // direction: scroll up -> Apps, scroll down -> Desktops. Dismiss the radial
         // so releasing right commits the switcher instead of mis-firing a radial pick.
-        case let (.commandMode, .scrolled(deltaY, _)):
+        // Zero-delta scrolls (horizontal swipes, momentum/phase boundaries) are ignored.
+        case let (.commandMode, .scrolled(deltaY, _)) where deltaY != 0:
             state = .switcherActive
             return [.hideRadial, .openSwitcher(seed: deltaY > 0 ? .apps : .desktops)]
 
         // Same entry from the left-held variant (user pressed left then scrolled).
-        case let (.commandModeLeftDown, .scrolled(deltaY, _)):
+        case let (.commandModeLeftDown, .scrolled(deltaY, _)) where deltaY != 0:
             state = .switcherActive
             return [.hideRadial, .openSwitcher(seed: deltaY > 0 ? .apps : .desktops)]
 
         // HUD open: scroll moves the highlight (reversed: scroll up = forward).
-        case let (.switcherActive, .scrolled(deltaY, _)):
+        case let (.switcherActive, .scrolled(deltaY, _)) where deltaY != 0:
             return [.switcherStep(forward: deltaY > 0)]
 
         // HUD open: left-click -> controller hit-tests (category button or item).
@@ -135,6 +136,15 @@ struct GestureMachine {
             where time - since <= settings.doubleClickInterval:
             state = .secondRightPending(originAt: point)
             return []
+
+        // Second press landed AFTER the double-click window but BEFORE the expiry
+        // tick (ticks are 16ms-granular and the run loop can lag): flush the
+        // deferred first click at its original point, and treat this press as a
+        // fresh first press (same as the .idle right-down case) so hold-to-radial
+        // and motion gestures still work for it.
+        case let (.awaitingSecondRight(oldPoint, _), .buttonDown(.right, point, time)):
+            state = .rightPending(downAt: point, downTime: time)
+            return [.passThroughRightClick(at: oldPoint)]
 
         // second right-click completes -> show Radial 2
         // Radial 2 anchors at the first tap's location (second click's point is intentionally ignored).

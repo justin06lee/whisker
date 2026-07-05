@@ -70,9 +70,13 @@ ln -s /Applications "$STAGING/Applications"
 hdiutil create -volname "$VOL" -srcfolder "$STAGING" -fs HFS+ \
   -format UDRW -size 200m -ov "$RW_DMG"
 
-# Mount it.
-MOUNT="/Volumes/$VOL"
-DEV="$(hdiutil attach -readwrite -noverify -noautoopen "$RW_DMG" | grep -E '^/dev/' | head -1 | awk '{print $1}')"
+# Mount it. Parse the REAL mount point from hdiutil's output: if a volume named
+# "Whisker" is already attached (e.g. the previous Whisker.dmg left open for
+# testing), the new image mounts at "/Volumes/Whisker 1", not "/Volumes/Whisker".
+ATTACH_OUT="$(hdiutil attach -readwrite -noverify -noautoopen "$RW_DMG")"
+DEV="$(printf '%s\n' "$ATTACH_OUT" | grep -E '^/dev/' | head -1 | awk '{print $1}')"
+MOUNT="$(printf '%s\n' "$ATTACH_OUT" | grep -o '/Volumes/.*' | head -1)"
+VOLNAME="$(basename "${MOUNT:-$VOL}")"
 
 style_ok=1
 if [ -n "${DEV:-}" ] && [ -d "$MOUNT" ]; then
@@ -82,9 +86,11 @@ if [ -n "${DEV:-}" ] && [ -d "$MOUNT" ]; then
   fi
 
   # Finder layout via AppleScript, bounded by a 25s alarm so it can never hang the build.
-  perl -e 'alarm 25; exec @ARGV' osascript <<'APPLESCRIPT' >/dev/null 2>&1 || style_ok=0
+  # Heredoc is intentionally UNQUOTED so $VOLNAME expands (targets the real volume even
+  # when it mounted as "Whisker 1"); the body contains no other shell-expandable text.
+  perl -e 'alarm 25; exec @ARGV' osascript <<APPLESCRIPT >/dev/null 2>&1 || style_ok=0
 tell application "Finder"
-  tell disk "Whisker"
+  tell disk "$VOLNAME"
     open
     set current view of container window to icon view
     set toolbar visible of container window to false

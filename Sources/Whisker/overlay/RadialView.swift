@@ -141,6 +141,11 @@ final class RadialNSView: NSView {
         }
     }
 
+    func stopAnimating() {
+        timer?.invalidate(); timer = nil
+        closeCompletion = nil
+    }
+
     /// Plays the collapse animation, then calls `completion` (so the controller can remove the panel).
     func beginClose(completion: @escaping () -> Void) {
         guard !closing else { return }

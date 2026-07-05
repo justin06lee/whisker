@@ -26,12 +26,20 @@ final class WindowsSource: SwitcherSource {
 
         var out: [SwitcherItem] = []
         for app in apps {
+            if app.isTerminated { continue }
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
+            // AX is cross-process IPC (default timeout ~6s). This runs inside the
+            // event-tap callback, so bound each call: a hung app costs <=150ms
+            // instead of stalling all mouse input until the tap is disabled.
+            AXUIElementSetMessagingTimeout(appElement, 0.15)
             var value: CFTypeRef?
             guard AXUIElementCopyAttributeValue(appElement, "AXWindows" as CFString, &value) == .success,
                   let windows = value as? [AXUIElement], !windows.isEmpty else { continue }
             let icon = app.icon
             for win in windows {
+                // Timeouts are per-element and don't cascade from the app element,
+                // so bound the title read too.
+                AXUIElementSetMessagingTimeout(win, 0.15)
                 var titleRef: CFTypeRef?
                 let title = (AXUIElementCopyAttributeValue(win, "AXTitle" as CFString, &titleRef) == .success
                              ? (titleRef as? String) : nil) ?? ""

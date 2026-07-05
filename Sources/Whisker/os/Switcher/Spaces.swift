@@ -48,9 +48,11 @@ enum Spaces {
     /// User desktops on `displayID`: count, current index, the CGS ManagedSpaceIDs
     /// (in Mission Control order) and the CGS "Display Identifier" for that monitor.
     /// `spaceIDs`/`displayIdentifier` are what `setCurrentSpace` needs to jump directly.
+    /// `currentIndex` is nil when the current space is NOT a user desktop (e.g. a
+    /// fullscreen app's space) — there is no desktop origin to traverse from.
     struct Snapshot {
         let count: Int
-        let currentIndex: Int
+        let currentIndex: Int?
         let spaceIDs: [UInt64]
         let displayIdentifier: String?
     }
@@ -59,7 +61,7 @@ enum Spaces {
         let cid = CGSMainConnectionID()
         guard let raw = CGSCopyManagedDisplaySpaces(cid) as? [Any] else {
             dumpOnce("CGSCopyManagedDisplaySpaces returned nil/non-array")
-            return Snapshot(count: 1, currentIndex: 0, spaceIDs: [], displayIdentifier: nil)
+            return Snapshot(count: 1, currentIndex: nil, spaceIDs: [], displayIdentifier: nil)
         }
 
         let wantUUID = displayUUIDString(displayID)
@@ -85,7 +87,7 @@ enum Spaces {
 
         guard let disp = chosen, let spaceList = disp["Spaces"] as? [Any] else {
             dumpOnce("no display dict / Spaces for displayID \(displayID) uuid \(wantUUID ?? "nil")")
-            return Snapshot(count: 1, currentIndex: 0, spaceIDs: [], displayIdentifier: nil)
+            return Snapshot(count: 1, currentIndex: nil, spaceIDs: [], displayIdentifier: nil)
         }
         let identifier = disp["Display Identifier"] as? String
 
@@ -104,7 +106,9 @@ enum Spaces {
         if ids.count <= 1 { dumpOnce("parsed \(ids.count) user space(s) for displayID \(displayID)") }
 
         let count = max(ids.count, 1)
-        let idx = currentID.flatMap { ids.firstIndex(of: $0) } ?? 0
+        // nil when the current space is a fullscreen space (type != 0): its id is
+        // not in `ids`, so there is no user-desktop index to report.
+        let idx = currentID.flatMap { ids.firstIndex(of: $0) }
         return Snapshot(count: count, currentIndex: idx, spaceIDs: ids, displayIdentifier: identifier)
     }
 
@@ -174,8 +178,9 @@ enum Spaces {
     }
 }
 
-/// Numbered desktop tiles for the monitor under the mouse. Commit steps
-/// Ctrl+←/→ to the target desktop on that monitor.
+/// Numbered desktop tiles for the monitor under the mouse. Commit jumps to the
+/// target desktop via the private CGS API, sliding through every desktop in
+/// between (`Spaces.setCurrentSpaceTraverse`).
 @MainActor
 final class SpacesSource: SwitcherSource {
     let category: SwitcherCategory = .desktops
@@ -188,7 +193,8 @@ final class SpacesSource: SwitcherSource {
     }
 
     private var count = 1
-    private var current = 0
+    /// nil when the current space isn't a user desktop (e.g. fullscreen app space).
+    private var current: Int? = nil
     private var spaceIDs: [UInt64] = []
     private var displayIdentifier: String?
 
@@ -206,8 +212,17 @@ final class SpacesSource: SwitcherSource {
 
     func commit(index: Int) {
         let target = SwitcherSelection.clamp(index, count: count)
-        guard target != current, spaceIDs.indices.contains(target),
-              current < spaceIDs.count, let display = displayIdentifier else { return }
+        guard spaceIDs.indices.contains(target), let display = displayIdentifier else { return }
+        guard let current, current < spaceIDs.count else {
+            // Current space isn't a user desktop (e.g. a fullscreen app's space):
+            // no desktop origin to traverse from — single slide straight to target.
+            // Fullscreen spaces sit to the right of desktops in Mission Control
+            // order, so the target is to the LEFT → content slides right.
+            Spaces.setCurrentSpaceTraverse(displayIdentifier: display,
+                                           path: [spaceIDs[target]], slideLeft: false)
+            return
+        }
+        guard target != current else { return }
         // Walk every desktop from current to target so the slide flies past the
         // ones in between. Higher index = to the right → content slides left.
         let slideLeft = target > current

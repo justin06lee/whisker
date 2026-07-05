@@ -23,7 +23,6 @@ enum AXContext {
         let isTextField: Bool
         let selectedText: String        // empty if none
         let caretRect: CGRect?          // CG global (top-left); caret/selection bounds
-        let elementFrame: CGRect?       // CG global (top-left); focused element or its window
         var hasSelection: Bool { !selectedText.isEmpty }
     }
 
@@ -53,7 +52,7 @@ enum AXContext {
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(system, "AXFocusedUIElement" as CFString, &focused) == .success,
               let element = focused else {
-            return Focus(isTextField: false, selectedText: "", caretRect: nil, elementFrame: nil)
+            return Focus(isTextField: false, selectedText: "", caretRect: nil)
         }
         let el = element as! AXUIElement
 
@@ -108,17 +107,7 @@ enum AXContext {
             caretRect = nil
         }
 
-        // Focused element's own frame, else its containing window's frame.
-        var elementFrame: CGRect? = frame(of: el)
-        if elementFrame == nil {
-            var winRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(el, "AXWindow" as CFString, &winRef) == .success,
-               let w = winRef {
-                elementFrame = frame(of: w as! AXUIElement)
-            }
-        }
-
-        return Focus(isTextField: isText, selectedText: selected, caretRect: caretRect, elementFrame: elementFrame)
+        return Focus(isTextField: isText, selectedText: selected, caretRect: caretRect)
     }
 
     /// One-shot diagnostic: dumps the focused element's role/subrole/attributes and
@@ -150,10 +139,22 @@ enum AXContext {
         let f = current()
         let caretDesc = f.caretRect.map { "\($0)" } ?? "nil"
 
+        // Focused element's own frame, else its containing window's frame. Resolved
+        // here (not in current()) so the 100ms poll doesn't pay the extra AX IPC for
+        // a value only this one-shot diagnostic reads.
+        var elementFrame: CGRect? = frame(of: el)
+        if elementFrame == nil {
+            var winRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(el, "AXWindow" as CFString, &winRef) == .success,
+               let w = winRef {
+                elementFrame = frame(of: w as! AXUIElement)
+            }
+        }
+
         return """
         frontmost=\(frontmostBundleID ?? "nil")
         role=\(attr("AXRole"))  subrole=\(attr("AXSubrole"))
-        isTextField=\(f.isTextField)  hasSelection=\(f.hasSelection)  caretRect=\(caretDesc)  elementFrame=\(f.elementFrame.map { "\($0)" } ?? "nil")
+        isTextField=\(f.isTextField)  hasSelection=\(f.hasSelection)  caretRect=\(caretDesc)  elementFrame=\(elementFrame.map { "\($0)" } ?? "nil")
         attrs=[\(attrs.joined(separator: ", "))]
         params=[\(params.joined(separator: ", "))]
         """

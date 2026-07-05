@@ -70,6 +70,7 @@ final class OverlayController {
     }
 
     private func removePanel() {
+        radialView?.stopAnimating()
         panel?.orderOut(nil)
         panel = nil
         radialView = nil

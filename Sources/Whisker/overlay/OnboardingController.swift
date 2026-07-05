@@ -99,6 +99,6 @@ final class OnboardingController {
            let i = NSImage(contentsOf: u) { return i }
         if let u = Bundle.module.url(forResource: "appicon", withExtension: "png"),
            let i = NSImage(contentsOf: u) { return i }
-        return NSImage(contentsOfFile: ("~/Pictures/pfp/whiskericon_bg.png" as NSString).expandingTildeInPath)
+        return nil
     }
 }
