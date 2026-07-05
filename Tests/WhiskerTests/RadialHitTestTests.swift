@@ -9,7 +9,14 @@ import CoreGraphics
 
 @Test func secondaryRadialHasSpecButtons() {
     let labels = RadialMenu.buttons(for: .secondary).map(\.label)
-    #expect(labels == ["⌘T", "⌘N", "⌘W"])
+    #expect(labels == ["⌘T", "⌘N", "⌘W", "Menu"])
+}
+
+@Test func paletteQueryMatching() {
+    #expect(MenuScanner.matches(path: "File ▸ Export ▸ PDF…", query: "pdf"))
+    #expect(MenuScanner.matches(path: "File ▸ Export ▸ PDF…", query: "  Export "))
+    #expect(MenuScanner.matches(path: "Edit ▸ Undo", query: ""))
+    #expect(!MenuScanner.matches(path: "Edit ▸ Undo", query: "redo"))
 }
 
 @Test func clickAtCenterSelectsNothing() {

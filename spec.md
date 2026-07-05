@@ -105,11 +105,13 @@ Mostly dropped (volume/brightness/lock/spotlight all have native clickable paths
 |---|---|
 | Tap right-click | Native context menu (unchanged) |
 | Hold right-click (~150ms) | Enter command mode → **Radial 1** |
-| — Radial 1 buttons | Enter · Escape · Tab/Shift-Tab · ⌘S · ⌘F · ⌘P |
-| — Scroll while right held | Switch app (⌘Tab) |
+| — Radial 1 buttons | Enter · Escape · Tab · ⌘S · ⌘F · ⌘P |
+| — Scroll while right held | Open **Switcher HUD** (Apps / Windows / Desktops / Tabs); scroll up seeds Apps, down seeds Desktops |
+| — Motion flick while right held | Command shortcut (shipped in v2; was phase 2) |
 | — Quick left-click while right held | ⌘-click (multi-select, add one) |
 | — Held left-click (~150ms) while right held | ⇧-click (range select) |
-| Double-right-click | **Radial 2** (visually distinct): ⌘T · ⌘N · ⌘W |
+| Double-right-click | **Radial 2** (visually distinct): ⌘T · ⌘N · ⌘W · **Menu** |
+| — Radial 2 **Menu** button | Open command palette (app-specific long-tail; shipped in v2) |
 | Middle-click + drag | Region screenshot |
 | Click in input box (no selection) | Floating buttons: 🗑 delete char · paste |
 | Highlight text | Floating buttons: 🗑 delete selection · cut · copy |
@@ -117,9 +119,9 @@ Mostly dropped (volume/brightness/lock/spotlight all have native clickable paths
 
 ## v1 scope summary
 
-**In:** floating text-edit buttons (#1), command-mode radials for Enter/Esc/Tab + ⌘S/F/P (#2, #4), switch-app via scroll (#3), multi/range select (#5), region screenshot (#7).
-**Deferred to phase 2:** mouse-motion gestures, command palette for app-specific long-tail (#6).
-**Dropped:** ⌘T/N/L/O as shortcuts (Radial 2 keeps T/N/W only), refresh, window tiling, volume/brightness/lock/spotlight.
+**In:** floating text-edit buttons (#1), command-mode radials for Enter/Esc/Tab + ⌘S/F/P (#2, #4), Switcher HUD via scroll (#3), multi/range select (#5), region screenshot (#7).
+**Phase 2 — now shipped (v2):** mouse-motion gestures, command palette for app-specific long-tail (#6, via Radial 2's Menu button).
+**Dropped:** ⌘T/N/L/O as shortcuts (Radial 2 keeps T/N/W plus Menu), refresh, window tiling, volume/brightness/lock/spotlight.
 
 ## Open questions
 1. **Technical spike:** how to intercept mouse events globally + draw radials over every app on macOS. Path: `CGEventTap` for capture/synthesis, transparent always-on-top overlay window (NSPanel) for radials, Accessibility API (AXUIElement) to read focused-element/selection state. Must confirm event-tap can suppress/reshape native right-click. Wispr Flow is bound to mouse button 5 — Whisker only uses left/right/middle/scroll, so no input conflict by design.

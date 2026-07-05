@@ -30,6 +30,14 @@ import Foundation
 @MainActor
 final class EventTap {
     private var machine: GestureMachine
+    // Whether the most recent left-down was swallowed. The machine can change
+    // state between a left-down and its matching left-up (tick transitions,
+    // right-up commits), so deciding each half independently would hand the app
+    // unbalanced pairs — a stuck-down button or an orphan up. The up and any
+    // drags in between must follow the down's decision. Deliberately NOT reset
+    // in `apply(settings:)`: the flag tracks the physical button pair, which
+    // outlives a machine rebuild.
+    private var swallowedLeftDown = false
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var tickTimer: Timer?
@@ -40,7 +48,16 @@ final class EventTap {
         self.onActions = onActions
     }
 
-    func start() {
+    /// Rebuild the pure machine with new settings (thresholds/toggles changed).
+    /// Any in-flight gesture resets to idle, which is the safe outcome.
+    func apply(settings: Settings) {
+        machine = GestureMachine(settings: settings)
+    }
+
+    /// Returns false if the tap could not be created (e.g. Accessibility revoked
+    /// between the permission check and now). The caller decides how to surface it.
+    @discardableResult
+    func start() -> Bool {
         let mask: CGEventMask =
             (1 << CGEventType.rightMouseDown.rawValue) |
             (1 << CGEventType.rightMouseUp.rawValue) |
@@ -49,6 +66,7 @@ final class EventTap {
             (1 << CGEventType.otherMouseDown.rawValue) |
             (1 << CGEventType.otherMouseUp.rawValue) |
             (1 << CGEventType.leftMouseDragged.rawValue) |
+            (1 << CGEventType.rightMouseDragged.rawValue) |
             (1 << CGEventType.otherMouseDragged.rawValue) |
             (1 << CGEventType.scrollWheel.rawValue)
 
@@ -61,7 +79,7 @@ final class EventTap {
             callback: eventTapCallback,
             userInfo: refcon
         ) else {
-            fatalError("Failed to create event tap — is Accessibility granted?")
+            return false
         }
         self.tap = tap
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -79,6 +97,7 @@ final class EventTap {
                 if !actions.isEmpty { self.onActions(actions) }
             }
         }
+        return true
     }
 
     /// Re-enable the tap after macOS disables it (it disables taps whose callback
@@ -111,12 +130,33 @@ final class EventTap {
             return true   // always consumed; pass-through is re-synthesized on .passThroughRightClick
         case .buttonDown(.middle, _, _), .buttonUp(.middle, _, _):
             return true
-        case .buttonDown(.left, _, _), .buttonUp(.left, _, _):
-            return wasInterceptingLeft || !actions.isEmpty
+        case .buttonDown(.left, _, _):
+            swallowedLeftDown = wasInterceptingLeft || !actions.isEmpty
+            return swallowedLeftDown
+        case .buttonUp(.left, _, _):
+            // Pair the up to its down, regardless of machine state now.
+            defer { swallowedLeftDown = false }
+            return swallowedLeftDown
         case .scrolled:
             return wasInterceptingScroll   // swallow scroll while driving the switcher
         default:
-            return false
+            // A drag whose button-down we swallowed must be swallowed too:
+            // leaking bare drag events would confuse the app underneath.
+            switch type {
+            case .rightMouseDragged:
+                return true   // right-down is always consumed
+            case .otherMouseDragged:
+                // Middle (button 2) down is always consumed; buttons 3+ pass
+                // through at down (`translate` ignores them), so their drags must too.
+                return event.getIntegerValueField(.mouseEventButtonNumber) == 2
+            case .leftMouseDragged:
+                // Follows the down's decision, not the machine's current state:
+                // an app-owned left drag already in flight when interception
+                // starts must keep passing through.
+                return swallowedLeftDown
+            default:
+                return false
+            }
         }
     }
 
@@ -130,7 +170,7 @@ final class EventTap {
             return .buttonDown(.middle, at: loc, time: time)
         case .otherMouseUp where event.getIntegerValueField(.mouseEventButtonNumber) == 2:
             return .buttonUp(.middle, at: loc, time: time)
-        case .leftMouseDragged, .otherMouseDragged:
+        case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             return .dragged(to: loc, time: time)
         case .scrollWheel:
             return .scrolled(deltaY: Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1)), time: time)

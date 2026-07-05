@@ -158,6 +158,53 @@ private let p = CGPoint(x: 100, y: 100)
     #expect(m.isInterceptingLeftClicks == true)             // commandMode
 }
 
+@Test func rightDownAfterWindowButBeforeExpiryTickFlushesAndStartsFreshPress() {
+    var m = GestureMachine(settings: .defaults)
+    let q = CGPoint(x: 400, y: 300)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.buttonUp(.right, at: p, time: 0.04))      // awaitingSecondRight since 0.04
+    // Next press lands past the 0.300 window but before any expiry tick fired:
+    // the deferred first click flushes at its OLD point, press is not swallowed.
+    let out = m.handle(.buttonDown(.right, at: q, time: 0.36))
+    #expect(out == [.passThroughRightClick(at: p)])
+    // and the new press behaves like a fresh first press: hold shows the radial at q
+    let held = m.handle(.tick(time: 0.52))                  // 0.16 held >= holdThreshold
+    #expect(held == [.showRadial(.primary, at: q)])
+}
+
+@Test func zeroDeltaScrollInCommandModeIsIgnored() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))                        // commandMode, radial shown
+    let out = m.handle(.scrolled(deltaY: 0, time: 0.2))     // horizontal/momentum artifact
+    #expect(out == [])                                      // switcher NOT opened
+    // releasing right still selects from the (still visible) radial
+    let up = m.handle(.buttonUp(.right, at: p, time: 0.3))
+    #expect(up == [.selectRadial(at: p)])
+}
+
+@Test func zeroDeltaScrollInSwitcherDoesNotStep() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))
+    _ = m.handle(.scrolled(deltaY: 3, time: 0.2))           // switcher open
+    let out = m.handle(.scrolled(deltaY: 0, time: 0.25))    // momentum noise
+    #expect(out == [])                                      // highlight untouched
+    #expect(m.isInterceptingScroll == true)                 // still swallowed, not leaked
+}
+
+@Test func zeroDeltaScrollWhileLeftDownInCommandModeIsIgnored() {
+    var m = GestureMachine(settings: .defaults)
+    _ = m.handle(.buttonDown(.right, at: p, time: 0.0))
+    _ = m.handle(.tick(time: 0.151))
+    _ = m.handle(.buttonDown(.left, at: p, time: 0.2))
+    let out = m.handle(.scrolled(deltaY: 0, time: 0.25))
+    #expect(out == [])                                      // switcher NOT opened
+    // quick left release still emits the command-click, proving state was untouched
+    let up = m.handle(.buttonUp(.left, at: p, time: 0.3))
+    #expect(up == [.commandClick(at: p)])
+}
+
 @Test func scrollWhileLeftDownInCommandModeOpensSwitcher() {
     var m = GestureMachine(settings: .defaults)
     _ = m.handle(.buttonDown(.right, at: p, time: 0.0))

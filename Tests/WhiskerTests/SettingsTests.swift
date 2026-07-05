@@ -7,4 +7,6 @@ import Testing
     #expect(s.leftClickHoldThreshold == 0.150)
     #expect(s.doubleClickInterval == 0.300)
     #expect(s.autoCopyOnHighlight == true)
+    #expect(s.motionGesturesEnabled == true)
+    #expect(s.motionDistanceThreshold == 40)
 }

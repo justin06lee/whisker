@@ -23,6 +23,11 @@ final class SwitcherController {
     ]
     private var category: SwitcherCategory = .apps
     private var mode: Mode = .nativeApps
+    /// True while a synthetic ⌘ is actually held (native ⌘Tab session live).
+    /// `mode` alone can't be used: it defaults to .nativeApps before any
+    /// session has started, so gating dismissal on it would inject a spurious
+    /// ⌘-Escape into the frontmost app on every open.
+    private var nativeSessionActive = false
     private var items: [SwitcherItem] = []
     private var selection = 0
 
@@ -89,6 +94,7 @@ final class SwitcherController {
         switch mode {
         case .nativeApps:
             InputSynth.commandUp()                 // releases ⌘ -> switches to highlighted app
+            nativeSessionActive = false
         case .custom:
             sources[category]?.commit(index: selection)
         }
@@ -113,6 +119,7 @@ final class SwitcherController {
             mode = .nativeApps
             items = []
             view?.items = []                       // hides the strip, leaves circles
+            nativeSessionActive = true
             InputSynth.commandDown()               // show the real switcher…
             InputSynth.tabStep(forward: true)      // …highlighting the previous app, like ⌘Tab
         } else {
@@ -125,10 +132,10 @@ final class SwitcherController {
     }
 
     private func dismissNativeIfNeeded() {
-        if mode == .nativeApps {
-            InputSynth.pressEscape()               // dismiss the switcher without switching
-            InputSynth.commandUp()                 // release the held ⌘
-        }
+        guard nativeSessionActive else { return }
+        nativeSessionActive = false
+        InputSynth.pressEscape()               // dismiss the switcher without switching
+        InputSynth.commandUp()                 // release the held ⌘
     }
 
     // MARK: - Availability

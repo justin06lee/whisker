@@ -6,13 +6,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventTap: EventTap?
     private var overlay: OverlayController?
     private var switcher: SwitcherController?
+    private var palette: PaletteController?
     private var screenshot: ScreenshotController?
     private var textButtons: TextButtonsController?
     private var axPollTimer: Timer?
+    private var axPollInFlight = false
     private var onboarding: OnboardingController?
     private var lastSelectedText: String = ""
-    private var autoCopyOnHighlight = Settings.current.autoCopyOnHighlight
+    private var settings = Settings.current
     private var autoCopyItem: NSMenuItem?
+    private var motionItem: NSMenuItem?
+    private var holdMenu: NSMenu?
+    private var leftHoldMenu: NSMenu?
+    private var doubleClickMenu: NSMenu?
+
+    private var autoCopyOnHighlight: Bool { settings.autoCopyOnHighlight }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -28,6 +36,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         copyItem.state = autoCopyOnHighlight ? .on : .off
         menu.addItem(copyItem)
         self.autoCopyItem = copyItem
+
+        let motion = NSMenuItem(title: "Mouse motion gestures",
+                                action: #selector(toggleMotionGestures), keyEquivalent: "")
+        motion.state = settings.motionGesturesEnabled ? .on : .off
+        menu.addItem(motion)
+        self.motionItem = motion
+
+        menu.addItem(.separator())
+        holdMenu = addThresholdSubmenu(
+            to: menu, title: "Right-hold threshold",
+            optionsMs: [100, 150, 200, 250], currentMs: Int(settings.holdThreshold * 1000),
+            action: #selector(setHoldThreshold(_:)))
+        leftHoldMenu = addThresholdSubmenu(
+            to: menu, title: "Left-hold threshold (⇧-click)",
+            optionsMs: [100, 150, 200, 250], currentMs: Int(settings.leftClickHoldThreshold * 1000),
+            action: #selector(setLeftHoldThreshold(_:)))
+        doubleClickMenu = addThresholdSubmenu(
+            to: menu, title: "Double-click window",
+            optionsMs: [250, 300, 400], currentMs: Int(settings.doubleClickInterval * 1000),
+            action: #selector(setDoubleClickInterval(_:)))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Capture focus info (2s) → clipboard",
                                 action: #selector(captureFocusInfo), keyEquivalent: ""))
@@ -58,7 +86,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let switcher = SwitcherController()
         self.switcher = switcher
 
-        let tap = EventTap(settings: .current) { [weak self] actions in
+        let palette = PaletteController()
+        self.palette = palette
+        overlay.onPalette = { [weak palette] in palette?.open() }
+
+        let tap = EventTap(settings: settings) { [weak self] actions in
             guard self != nil else { return }
             for action in actions {
                 switch action {
@@ -80,6 +112,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     switcher.commit()
                 case .cancelSwitcher:
                     switcher.cancel()
+                case let .motionGesture(direction):
+                    switch direction {
+                    case .left:  InputSynth.post(.back)
+                    case .right: InputSynth.post(.forward)
+                    case .up:    InputSynth.post(.home)
+                    case .down:  InputSynth.post(.end)
+                    }
                 case let .commandClick(at: point):
                     InputSynth.modifiedClick(at: point, command: true, shift: false)
                 case let .shiftClick(at: point):
@@ -91,7 +130,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         self.eventTap = tap
-        tap.start()
+        if !tap.start() {
+            // Accessibility was revoked between the permission check and now (or the
+            // tap failed for another reason). Stay alive and point at the fix.
+            self.eventTap = nil
+            let alert = NSAlert()
+            alert.messageText = "Whisker couldn't start listening for mouse events"
+            alert.informativeText = "Grant Accessibility access in System Settings ▸ Privacy & Security ▸ Accessibility, then relaunch Whisker."
+            alert.addButton(withTitle: "Open Settings")
+            alert.addButton(withTitle: "Later")
+            if alert.runModal() == .alertFirstButtonReturn {
+                Permissions.openAccessibilitySettings()
+            }
+            return
+        }
 
         let textButtons = TextButtonsController()
         self.textButtons = textButtons
@@ -115,15 +167,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // thread is the primary fix for cursor-area jank. UI mutation hops back to the
         // main thread. The poll only needs the caret-bearing `Focus`; no mouse/bundle/
         // pid snapshots (those fallbacks were deleted — `captureFocusInfo` keeps its own).
+        //
+        // `axPollInFlight` caps the serial queue at one pending read: if the focused
+        // app's AX server stalls (a beachballing app can block each call for seconds),
+        // ticks are dropped instead of piling work items behind the stalled read and
+        // replaying a burst of stale Focus snapshots when it recovers.
         let axQueue = DispatchQueue(label: "whisker.ax", qos: .userInitiated)
         axPollTimer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard self != nil else { return }
+                guard let self, !self.axPollInFlight else { return }
+                self.axPollInFlight = true
                 axQueue.async {
                     let focus = AXContext.current() // off-main: cross-process AX IPC
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
-                            self?.applyFocus(focus)
+                            self.axPollInFlight = false
+                            self.applyFocus(focus)
                         }
                     }
                 }
@@ -161,7 +220,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Returns nil if there is no caret or it doesn't land on a real screen.
     private func caretAnchor(_ caret: CGRect?, hasSelection: Bool) -> CGPoint? {
         guard let r = caret else { return nil }
-        let panelW = CGFloat(hasSelection ? 3 : 2) * 44
         let panelH: CGFloat = 40
         let gap: CGFloat = hasSelection ? 10 : 4   // selection sits slightly higher
         let top = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.minY))
@@ -171,8 +229,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let bottom = Coords.cocoaGlobal(fromCG: CGPoint(x: r.minX, y: r.maxY))
             y = bottom.y - gap - panelH                          // place just below the line
         }
-        _ = panelW
         return CGPoint(x: top.x, y: y)
+    }
+
+    // If Whisker quits while a native ⌘Tab switcher session is live, ⌘ is still
+    // synthetically held (InputSynth.commandDown) and nothing else would release
+    // it — the system switcher would stay up with ⌘ stuck. Posting commandUp is
+    // harmless when ⌘ isn't held, so release unconditionally.
+    func applicationWillTerminate(_ notification: Notification) {
+        InputSynth.commandUp()
     }
 
     // Defensive: even though Whisker has no persistent windows today, this keeps
@@ -183,11 +248,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func toggleAutoCopy() {
-        autoCopyOnHighlight.toggle()
-        var s = Settings.current
-        s.autoCopyOnHighlight = autoCopyOnHighlight
-        s.save()
-        autoCopyItem?.state = autoCopyOnHighlight ? .on : .off
+        settings.autoCopyOnHighlight.toggle()
+        settingsChanged()
+        autoCopyItem?.state = settings.autoCopyOnHighlight ? .on : .off
+    }
+
+    @MainActor @objc private func toggleMotionGestures() {
+        settings.motionGesturesEnabled.toggle()
+        settingsChanged()
+        motionItem?.state = settings.motionGesturesEnabled ? .on : .off
+    }
+
+    @MainActor @objc private func setHoldThreshold(_ sender: NSMenuItem) {
+        settings.holdThreshold = Double(sender.tag) / 1000
+        settingsChanged()
+        refreshCheckmarks(in: holdMenu, selectedMs: sender.tag)
+    }
+
+    @MainActor @objc private func setLeftHoldThreshold(_ sender: NSMenuItem) {
+        settings.leftClickHoldThreshold = Double(sender.tag) / 1000
+        settingsChanged()
+        refreshCheckmarks(in: leftHoldMenu, selectedMs: sender.tag)
+    }
+
+    @MainActor @objc private func setDoubleClickInterval(_ sender: NSMenuItem) {
+        settings.doubleClickInterval = Double(sender.tag) / 1000
+        settingsChanged()
+        refreshCheckmarks(in: doubleClickMenu, selectedMs: sender.tag)
+    }
+
+    /// Persist the new settings and push them into the live gesture machine.
+    private func settingsChanged() {
+        settings.save()
+        eventTap?.apply(settings: settings)
+    }
+
+    /// Build a "<title> ▸ 100 ms / 150 ms / …" radio submenu; returns the submenu
+    /// so the checkmarks can be refreshed on selection. Values ride in `tag` (ms).
+    private func addThresholdSubmenu(to menu: NSMenu, title: String, optionsMs: [Int],
+                                     currentMs: Int, action: Selector) -> NSMenu {
+        let sub = NSMenu()
+        for ms in optionsMs {
+            let item = NSMenuItem(title: "\(ms) ms", action: action, keyEquivalent: "")
+            item.tag = ms
+            item.state = ms == currentMs ? .on : .off
+            sub.addItem(item)
+        }
+        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        parent.submenu = sub
+        menu.addItem(parent)
+        return sub
+    }
+
+    private func refreshCheckmarks(in menu: NSMenu?, selectedMs: Int) {
+        menu?.items.forEach { $0.state = $0.tag == selectedMs ? .on : .off }
     }
 
     @MainActor @objc private func captureFocusInfo() {
@@ -235,10 +349,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SwiftPM dev runs (`swift run`): the resource lives in Bundle.module.
         if img == nil, let url = Bundle.module.url(forResource: "menubar", withExtension: "png") {
             img = NSImage(contentsOf: url)
-        }
-        // Last-ditch dev fallback: load from the user's Pictures folder.
-        if img == nil {
-            img = NSImage(contentsOfFile: ("~/Pictures/pfp/whisker_taskbar.png" as NSString).expandingTildeInPath)
         }
         guard let base = img else { return nil }
         let size = NSSize(width: 18, height: 18)

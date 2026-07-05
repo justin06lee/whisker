@@ -20,7 +20,11 @@ import Testing
 
 @Test func supportedBrowserDetection() {
     #expect(TabsSource.supportedBrowser(bundleID: "com.apple.Safari") == .safari)
-    #expect(TabsSource.supportedBrowser(bundleID: "com.google.Chrome") == .chrome)
+    #expect(TabsSource.supportedBrowser(bundleID: "com.google.Chrome") == .chromium(appName: "Google Chrome"))
+    #expect(TabsSource.supportedBrowser(bundleID: "com.microsoft.edgemac") == .chromium(appName: "Microsoft Edge"))
+    #expect(TabsSource.supportedBrowser(bundleID: "com.brave.Browser") == .chromium(appName: "Brave Browser"))
+    #expect(TabsSource.supportedBrowser(bundleID: "company.thebrowser.Browser") == .chromium(appName: "Arc"))
+    #expect(TabsSource.supportedBrowser(bundleID: "com.vivaldi.Vivaldi") == .chromium(appName: "Vivaldi"))
     #expect(TabsSource.supportedBrowser(bundleID: "com.foo.Bar") == nil)
     #expect(TabsSource.supportedBrowser(bundleID: nil) == nil)
 }
