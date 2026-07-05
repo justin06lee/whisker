@@ -9,6 +9,10 @@ struct KeyCombo: Equatable {
     static let escape   = KeyCombo(keyCode: 0x35, command: false, shift: false)
     static let tab      = KeyCombo(keyCode: 0x30, command: false, shift: false)
     static let delete   = KeyCombo(keyCode: 0x33, command: false, shift: false)   // Backspace (delete backward)
+    static let back     = KeyCombo(keyCode: 0x21, command: true, shift: false)    // ⌘[ (back)
+    static let forward  = KeyCombo(keyCode: 0x1E, command: true, shift: false)    // ⌘] (forward)
+    static let home     = KeyCombo(keyCode: 0x73, command: false, shift: false)   // scroll to top
+    static let end      = KeyCombo(keyCode: 0x77, command: false, shift: false)   // scroll to bottom
     static func cmd(_ letter: Character) -> KeyCombo {
         KeyCombo(keyCode: Self.keyCode(for: letter), command: true, shift: false)
     }

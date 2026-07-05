@@ -2,6 +2,10 @@ import CoreGraphics
 
 enum RadialKind: Equatable { case primary, secondary }   // Radial 1 / Radial 2
 
+/// Direction of a right-drag flick, in screen terms (up = toward the top of the
+/// screen, i.e. negative CG y).
+enum MotionDirection: Equatable { case left, right, up, down }
+
 enum GestureAction: Equatable {
     case passThroughRightClick(at: CGPoint)   // re-synthesize a native right-click (context menu)
     case showRadial(RadialKind, at: CGPoint)
@@ -13,6 +17,9 @@ enum GestureAction: Equatable {
     case switcherClick(at: CGPoint)             // left-click while open; controller hit-tests it
     case commitSwitcher                         // right released -> activate the highlighted item
     case cancelSwitcher                         // aborted -> hide, switch nothing
+    // Mouse-motion gesture: a right-drag flick released before the hold threshold.
+    // left/right -> Back/Forward (⌘[ / ⌘]), up/down -> Home/End.
+    case motionGesture(MotionDirection)
     case commandClick(at: CGPoint)      // ⌘-click (multi-select)
     case shiftClick(at: CGPoint)        // ⇧-click (range select)
     case beginScreenshotRegion(at: CGPoint)

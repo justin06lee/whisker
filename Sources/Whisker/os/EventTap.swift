@@ -40,7 +40,16 @@ final class EventTap {
         self.onActions = onActions
     }
 
-    func start() {
+    /// Rebuild the pure machine with new settings (thresholds/toggles changed).
+    /// Any in-flight gesture resets to idle, which is the safe outcome.
+    func apply(settings: Settings) {
+        machine = GestureMachine(settings: settings)
+    }
+
+    /// Returns false if the tap could not be created (e.g. Accessibility revoked
+    /// between the permission check and now). The caller decides how to surface it.
+    @discardableResult
+    func start() -> Bool {
         let mask: CGEventMask =
             (1 << CGEventType.rightMouseDown.rawValue) |
             (1 << CGEventType.rightMouseUp.rawValue) |
@@ -49,6 +58,7 @@ final class EventTap {
             (1 << CGEventType.otherMouseDown.rawValue) |
             (1 << CGEventType.otherMouseUp.rawValue) |
             (1 << CGEventType.leftMouseDragged.rawValue) |
+            (1 << CGEventType.rightMouseDragged.rawValue) |
             (1 << CGEventType.otherMouseDragged.rawValue) |
             (1 << CGEventType.scrollWheel.rawValue)
 
@@ -61,7 +71,7 @@ final class EventTap {
             callback: eventTapCallback,
             userInfo: refcon
         ) else {
-            fatalError("Failed to create event tap — is Accessibility granted?")
+            return false
         }
         self.tap = tap
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -79,6 +89,7 @@ final class EventTap {
                 if !actions.isEmpty { self.onActions(actions) }
             }
         }
+        return true
     }
 
     /// Re-enable the tap after macOS disables it (it disables taps whose callback
@@ -116,7 +127,9 @@ final class EventTap {
         case .scrolled:
             return wasInterceptingScroll   // swallow scroll while driving the switcher
         default:
-            return false
+            // Right-drags are always swallowed: the right-down was already consumed,
+            // so leaking bare drag events would confuse the app underneath.
+            return type == .rightMouseDragged
         }
     }
 
@@ -130,7 +143,7 @@ final class EventTap {
             return .buttonDown(.middle, at: loc, time: time)
         case .otherMouseUp where event.getIntegerValueField(.mouseEventButtonNumber) == 2:
             return .buttonUp(.middle, at: loc, time: time)
-        case .leftMouseDragged, .otherMouseDragged:
+        case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             return .dragged(to: loc, time: time)
         case .scrollWheel:
             return .scrolled(deltaY: Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1)), time: time)

@@ -4,6 +4,7 @@ struct GestureMachine {
     private enum State: Equatable {
         case idle
         case rightPending(downAt: CGPoint, downTime: Double)
+        case motionTracking(originAt: CGPoint)                 // right-drag flick in progress; classify on release
         case commandMode(originAt: CGPoint)
         case switcherActive                                    // Switcher HUD open (scroll/click cycle, release commits)
 
@@ -47,6 +48,27 @@ struct GestureMachine {
         case let (.rightPending(point, downTime), .tick(time)) where time - downTime >= settings.holdThreshold:
             state = .commandMode(originAt: point)
             return [.showRadial(.primary, at: point)]
+
+        // Motion gesture: the right-drag travels past the distance threshold BEFORE
+        // the hold threshold fires. Overrides the radial for this press; the flick
+        // direction is classified at release.
+        case let (.rightPending(downAt, _), .dragged(point, _))
+            where settings.motionGesturesEnabled
+                && Self.distance(downAt, point) >= settings.motionDistanceThreshold:
+            state = .motionTracking(originAt: downAt)
+            return []
+
+        // Release ends the flick. Releasing back near the origin aborts (fires
+        // nothing); otherwise the dominant axis picks the direction.
+        case let (.motionTracking(origin), .buttonUp(.right, point, _)):
+            state = .idle
+            guard Self.distance(origin, point) >= settings.motionDistanceThreshold else { return [] }
+            return [.motionGesture(Self.motionDirection(from: origin, to: point))]
+
+        // Any other button while flick-tracking aborts the gesture.
+        case (.motionTracking, .buttonDown):
+            state = .idle
+            return []
 
         case let (.rightPending(point, downTime), .buttonUp(.right, _, time)):
             if time - downTime < settings.holdThreshold {
@@ -154,5 +176,20 @@ struct GestureMachine {
         default:
             return []
         }
+    }
+
+    private static func distance(_ a: CGPoint, _ b: CGPoint) -> Double {
+        let dx = Double(b.x - a.x), dy = Double(b.y - a.y)
+        return (dx * dx + dy * dy).squareRoot()
+    }
+
+    /// Classify a flick by its dominant axis. CG coordinates are top-left origin,
+    /// so negative dy = the cursor moved UP on screen.
+    private static func motionDirection(from a: CGPoint, to b: CGPoint) -> MotionDirection {
+        let dx = Double(b.x - a.x), dy = Double(b.y - a.y)
+        if abs(dx) >= abs(dy) {
+            return dx < 0 ? .left : .right
+        }
+        return dy < 0 ? .up : .down
     }
 }

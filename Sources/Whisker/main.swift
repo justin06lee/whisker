@@ -11,8 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var axPollTimer: Timer?
     private var onboarding: OnboardingController?
     private var lastSelectedText: String = ""
-    private var autoCopyOnHighlight = Settings.current.autoCopyOnHighlight
+    private var settings = Settings.current
     private var autoCopyItem: NSMenuItem?
+    private var motionItem: NSMenuItem?
+    private var holdMenu: NSMenu?
+    private var leftHoldMenu: NSMenu?
+    private var doubleClickMenu: NSMenu?
+
+    private var autoCopyOnHighlight: Bool { settings.autoCopyOnHighlight }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -28,6 +34,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         copyItem.state = autoCopyOnHighlight ? .on : .off
         menu.addItem(copyItem)
         self.autoCopyItem = copyItem
+
+        let motion = NSMenuItem(title: "Mouse motion gestures",
+                                action: #selector(toggleMotionGestures), keyEquivalent: "")
+        motion.state = settings.motionGesturesEnabled ? .on : .off
+        menu.addItem(motion)
+        self.motionItem = motion
+
+        menu.addItem(.separator())
+        holdMenu = addThresholdSubmenu(
+            to: menu, title: "Right-hold threshold",
+            optionsMs: [100, 150, 200, 250], currentMs: Int(settings.holdThreshold * 1000),
+            action: #selector(setHoldThreshold(_:)))
+        leftHoldMenu = addThresholdSubmenu(
+            to: menu, title: "Left-hold threshold (⇧-click)",
+            optionsMs: [100, 150, 200, 250], currentMs: Int(settings.leftClickHoldThreshold * 1000),
+            action: #selector(setLeftHoldThreshold(_:)))
+        doubleClickMenu = addThresholdSubmenu(
+            to: menu, title: "Double-click window",
+            optionsMs: [250, 300, 400], currentMs: Int(settings.doubleClickInterval * 1000),
+            action: #selector(setDoubleClickInterval(_:)))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Capture focus info (2s) → clipboard",
                                 action: #selector(captureFocusInfo), keyEquivalent: ""))
@@ -58,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let switcher = SwitcherController()
         self.switcher = switcher
 
-        let tap = EventTap(settings: .current) { [weak self] actions in
+        let tap = EventTap(settings: settings) { [weak self] actions in
             guard self != nil else { return }
             for action in actions {
                 switch action {
@@ -80,6 +106,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     switcher.commit()
                 case .cancelSwitcher:
                     switcher.cancel()
+                case let .motionGesture(direction):
+                    switch direction {
+                    case .left:  InputSynth.post(.back)
+                    case .right: InputSynth.post(.forward)
+                    case .up:    InputSynth.post(.home)
+                    case .down:  InputSynth.post(.end)
+                    }
                 case let .commandClick(at: point):
                     InputSynth.modifiedClick(at: point, command: true, shift: false)
                 case let .shiftClick(at: point):
@@ -91,7 +124,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         self.eventTap = tap
-        tap.start()
+        if !tap.start() {
+            // Accessibility was revoked between the permission check and now (or the
+            // tap failed for another reason). Stay alive and point at the fix.
+            self.eventTap = nil
+            let alert = NSAlert()
+            alert.messageText = "Whisker couldn't start listening for mouse events"
+            alert.informativeText = "Grant Accessibility access in System Settings ▸ Privacy & Security ▸ Accessibility, then relaunch Whisker."
+            alert.addButton(withTitle: "Open Settings")
+            alert.addButton(withTitle: "Later")
+            if alert.runModal() == .alertFirstButtonReturn {
+                Permissions.openAccessibilitySettings()
+            }
+            return
+        }
 
         let textButtons = TextButtonsController()
         self.textButtons = textButtons
@@ -183,11 +229,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func toggleAutoCopy() {
-        autoCopyOnHighlight.toggle()
-        var s = Settings.current
-        s.autoCopyOnHighlight = autoCopyOnHighlight
-        s.save()
-        autoCopyItem?.state = autoCopyOnHighlight ? .on : .off
+        settings.autoCopyOnHighlight.toggle()
+        settingsChanged()
+        autoCopyItem?.state = settings.autoCopyOnHighlight ? .on : .off
+    }
+
+    @MainActor @objc private func toggleMotionGestures() {
+        settings.motionGesturesEnabled.toggle()
+        settingsChanged()
+        motionItem?.state = settings.motionGesturesEnabled ? .on : .off
+    }
+
+    @MainActor @objc private func setHoldThreshold(_ sender: NSMenuItem) {
+        settings.holdThreshold = Double(sender.tag) / 1000
+        settingsChanged()
+        refreshCheckmarks(in: holdMenu, selectedMs: sender.tag)
+    }
+
+    @MainActor @objc private func setLeftHoldThreshold(_ sender: NSMenuItem) {
+        settings.leftClickHoldThreshold = Double(sender.tag) / 1000
+        settingsChanged()
+        refreshCheckmarks(in: leftHoldMenu, selectedMs: sender.tag)
+    }
+
+    @MainActor @objc private func setDoubleClickInterval(_ sender: NSMenuItem) {
+        settings.doubleClickInterval = Double(sender.tag) / 1000
+        settingsChanged()
+        refreshCheckmarks(in: doubleClickMenu, selectedMs: sender.tag)
+    }
+
+    /// Persist the new settings and push them into the live gesture machine.
+    private func settingsChanged() {
+        settings.save()
+        eventTap?.apply(settings: settings)
+    }
+
+    /// Build a "<title> ▸ 100 ms / 150 ms / …" radio submenu; returns the submenu
+    /// so the checkmarks can be refreshed on selection. Values ride in `tag` (ms).
+    private func addThresholdSubmenu(to menu: NSMenu, title: String, optionsMs: [Int],
+                                     currentMs: Int, action: Selector) -> NSMenu {
+        let sub = NSMenu()
+        for ms in optionsMs {
+            let item = NSMenuItem(title: "\(ms) ms", action: action, keyEquivalent: "")
+            item.tag = ms
+            item.state = ms == currentMs ? .on : .off
+            sub.addItem(item)
+        }
+        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        parent.submenu = sub
+        menu.addItem(parent)
+        return sub
+    }
+
+    private func refreshCheckmarks(in menu: NSMenu?, selectedMs: Int) {
+        menu?.items.forEach { $0.state = $0.tag == selectedMs ? .on : .off }
     }
 
     @MainActor @objc private func captureFocusInfo() {
