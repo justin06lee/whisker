@@ -32,6 +32,12 @@ final class SwitcherNSView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
 
+        // The system ⌘Tab switcher renders as a LIGHT frost regardless of the
+        // user's appearance. NSVisualEffectView materials follow the effective
+        // appearance, so in dark mode .popover would go dark/muddy — pin the
+        // whole HUD to aqua so it matches the real switcher in both modes.
+        appearance = NSAppearance(named: .aqua)
+
         // Soft dark drop shadow behind the strip. Lives on its own layer (the glass
         // clips to its bounds for the blur/corners, so it can't cast a shadow itself).
         shadowLayer.shadowColor = NSColor.black.cgColor
@@ -50,7 +56,7 @@ final class SwitcherNSView: NSView {
         glass.layer?.cornerRadius = Self.cornerRadius
         glass.layer?.masksToBounds = true
         glass.layer?.borderWidth = 1
-        glass.layer?.borderColor = NSColor(white: 1, alpha: 0.5).cgColor
+        glass.layer?.borderColor = NSColor(white: 1, alpha: 0.35).cgColor   // faint rim, like the system strip
         addSubview(glass)
 
         // White vibrancy tint riding on top of the blur. .popover alone lets too
@@ -126,19 +132,20 @@ final class SwitcherForeground: NSView {
         for (i, item) in items.enumerated() {
             let r = l.itemRects[i]
             if i == selection {
-                // Soft lighter plate clearly larger than the icon (outset 10 → 124,
-                // radius 26), like the macOS 26 switcher's selection on light glass.
-                let hl = r.insetBy(dx: -10, dy: -10)
-                let path = NSBezierPath(roundedRect: hl, xRadius: 26, yRadius: 26)
-                NSColor(white: 1, alpha: 0.6).setFill()
+                // Subtle lighter wash clearly larger than the icon (outset 14 →
+                // 132, radius 30), matching the real switcher's selection: a
+                // gentle tint on the light glass, not a solid white slab.
+                let hl = r.insetBy(dx: -14, dy: -14)
+                let path = NSBezierPath(roundedRect: hl, xRadius: 30, yRadius: 30)
+                NSColor(white: 1, alpha: 0.5).setFill()
                 path.fill()
             }
-            // Soft drop shadow so icons lift off the frosted glass like the real
-            // switcher (icons otherwise read flat/pasted on).
+            // Faint drop shadow so icons lift off the frosted glass like the real
+            // switcher — kept soft; a hard shadow reads as boxy tiles.
             NSGraphicsContext.saveGraphicsState()
             let sh = NSShadow()
-            sh.shadowColor = NSColor(white: 0, alpha: 0.22)
-            sh.shadowBlurRadius = 5
+            sh.shadowColor = NSColor(white: 0, alpha: 0.15)
+            sh.shadowBlurRadius = 6
             sh.shadowOffset = NSSize(width: 0, height: -2)
             sh.set()
             if let icon = item.icon {
@@ -161,7 +168,7 @@ final class SwitcherForeground: NSView {
                 .foregroundColor: NSColor(white: 0, alpha: 0.8),
                 .paragraphStyle: para])
             let sz = s.size()
-            let y = iconRect.minY - 4 - sz.height
+            let y = iconRect.minY - 8 - sz.height   // ~8pt gap, like the system label
             let maxW = l.stripRect.width - 24
             let w = min(sz.width, maxW)
             let lo = l.stripRect.minX + 12
